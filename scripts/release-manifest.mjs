@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 const repository=process.env.GITHUB_REPOSITORY;
-const tag=process.env.GITHUB_REF_NAME;
+const tag=process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME;
 const versionCode=Number(process.env.APP_VERSION_CODE);
 assert.match(repository ?? '', /^[\w.-]+\/[\w.-]+$/);
 assert.match(tag ?? '', /^v\d+\.\d+\.\d+(?:-[\w.-]+)?$/);

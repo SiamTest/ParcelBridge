@@ -13,6 +13,15 @@ Completed locally on the source in this archive:
 - Android `assembleDirectDebug` and `assemblePlayDebug`: passed on JDK 17 / Gradle 8.11.1 / SDK 36.
 - XML resources, dependency lock and wrapper configuration: checked.
 
+Automation update verified locally:
+
+- Six Python script tests passed: four automation planning cases and two mocked Play publishing cases.
+- Eleven Node script tests passed: cleanup retention and rerun protection, automatic manifest URLs, increasing release versions, paginated prereleases, immutable releases, and failed/untrusted manifest handling.
+- All five GitHub workflow files passed actionlint 1.7.12; shellcheck was not available.
+- Eight workflow shell blocks passed Bash syntax checks; the embedded Python block also parsed successfully. No deployment, signing or publishing commands were executed by these syntax checks.
+- Cleanup tests use mocked GitHub APIs; no real runs, artifacts or releases were deleted.
+- New deployment/release/Play chaining was not executed on GitHub. Cloudflare/Turso deployment and signed production builds were not repeated for this automation-only change. Android app source is unchanged from the local builds listed above.
+
 The app has not been exercised on a physical phone or emulator. Live Cloudflare/Turso behavior, real parcel handling, signed release upgrades and Google Play update delivery still need testing with your configured accounts and signing keys.
 
 The supplied GitHub Actions logs confirm the API job passed. The Android job stopped before compilation because `setup-android@v3` requested the unavailable legacy `tools` package. Both CI and signed-release workflows now explicitly request `platform-tools`, `platforms;android-36` and `build-tools;35.0.0`. The package names match the locally installed SDK used for the successful builds above, and both workflow inputs were checked against the action's implementation. A GitHub rerun of this fix is still pending; upload the corrected workflows to trigger it.

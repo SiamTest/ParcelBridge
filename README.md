@@ -1,6 +1,6 @@
 # ParcelBridge
 
-Android delivery app for sellers and riders in Feni, Bangladesh. Kotlin app, Cloudflare Workers API, Turso/libSQL database and GitHub Actions. This is a pilot implementation, not a deployed service.
+Android delivery app for sellers and riders in Feni, Bangladesh. Kotlin app, Cloudflare Workers API, Turso/libSQL database and GitHub Actions. This is a pilot implementation.
 
 ## Features included
 
@@ -20,6 +20,8 @@ Android delivery app for sellers and riders in Feni, Bangladesh. Kotlin app, Clo
 - Background status notifications, daily direct-update checks and optional automatic Wi-Fi downloads.
 - Direct APK updates verify the SHA-256 digest, package name, increasing version and signing certificate before installation.
 - Google Play flexible in-app updates in the Play build.
+- Automatic main-branch deployment, signed GitHub Releases, generated version codes and release notes, and optional Google Play draft uploads after checks pass.
+- Automatic Actions cleanup: successful runs and artifacts expire after one day, failed/cancelled runs after seven days. Published releases are kept.
 - API request limits, SQL parameter binding, role checks, private customer details and scheduled session cleanup.
 
 ## Architecture
@@ -34,8 +36,9 @@ Android seller / rider / operator
       Public tracking page
 
 GitHub Actions: API tests + Android tests/lint/build
-               signed APK + signed Play AAB + update manifest
-               manual Cloudflare deployment and Play draft upload
+               automatic Cloudflare deployment
+               signed APK + signed Play AAB + update manifest + GitHub Release
+               optional Play draft upload + completed-run cleanup
 ```
 
 Database credentials are only in Workers and GitHub environment secrets. The Android app never connects directly to Turso.
@@ -86,7 +89,7 @@ The centre coordinates are based on [GeoNames](https://www.geonames.org/search.h
 
 Push this folder as the repository root. Add a GitHub environment named `production`. Protect it if you want release/deployment approval through GitHub.
 
-Set repository variable `API_BASE_URL` to the deployed HTTPS Worker URL. Configure these environment secrets:
+Set repository variable `API_BASE_URL` to the deployed HTTPS Worker URL, with no `/v1` path. For this installation it is `https://parcelbridge-api.koinlytest.workers.dev`. Configure these secrets at repository scope or in the `production` environment (environment values take precedence):
 
 | Secret | Used for |
 |---|---|
@@ -102,10 +105,37 @@ Set repository variable `API_BASE_URL` to the deployed HTTPS Worker URL. Configu
 
 Keep signing keys and passwords in secure storage; future direct updates must use the same signing key. Do not put secret values in chat, app configuration, source files, or GitHub variables.
 
-1. **Test and build:** on pull requests, main pushes or manual runs; verifies the API, tests/lints both Android variants and uploads debug APK artifacts.
-2. **Deploy Cloudflare API:** manual run; checks/tests, applies the initial schema and deploys the Worker plus private database bindings. It sets `GITHUB_REPOSITORY` to the current repository for direct updates.
-3. **Signed Android release:** push a version tag such as `v0.1.0`; builds a signed direct APK, a signed Play AAB and a checksummed manifest, then creates a GitHub Release. Version codes are release-workflow run numbers plus 1000. Do not reset the workflow run-number sequence after distribution. API URL and all signing secrets are required.
-4. **Upload Google Play draft:** manual run with the release tag and track; downloads the AAB and uploads a draft through the Android Publisher API. Review and publish in Play Console.
+1. **Test and build:** on pull requests, main pushes or manual runs; verifies the API and automation scripts, tests/lints both Android variants and uploads debug APK artifacts. Successful main runs continue into the workflows below. Pull requests only run checks. Main runs are serialized rather than cancelling a deployment mid-flight; a commit that is no longer main skips production work. The run summary lists missing configuration by name without printing secret values.
+2. **Deploy Cloudflare API:** automatically called after checks when Cloudflare/Turso credentials exist, or run manually. Checks/tests, applies the additive initial schema and deploys the Worker plus private database bindings. It sets `GITHUB_REPOSITORY` to the current repository for direct updates. A failed deployment stops the following automatic release.
+3. **Signed Android release:** automatically called after checks/deployment when the API URL and four signing secrets exist. Builds a signed direct APK, a signed Play AAB and a checksummed manifest; uploads them to a draft GitHub Release and publishes only after all assets have uploaded. Release notes are generated automatically. Release assets are immutable; published releases are never overwritten. You can also run it manually or push a tag such as `v1.0.0`; tags containing a suffix such as `-beta.1` are published as prereleases, which the stable APK updater does not select.
+4. **Upload Google Play draft:** automatically called after publishing when the service-account secret exists, or run manually with a release tag and track. It downloads the AAB and uploads a draft through the Android Publisher API. Review and publish in Play Console. Play requires initial app setup and appropriate service-account access.
+5. **Clean completed Actions runs:** runs after workflow completion, every six hours, or manually. It deletes successful/skipped/neutral runs older than one day and other completed runs older than seven days, including their logs and artifacts. It keeps active runs, its current run, unrelated workflows and all GitHub Releases. Cleanup reads only default-branch code and rechecks each run before deletion in case someone has rerun it. Download debug APKs before the one-day cleanup deadline; failed-run artifacts have seven-day retention.
+
+Called workflows appear as jobs inside the parent run. They are invoked directly through [reusable workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows); the pipeline does not rely on a bot-created tag triggering another workflow. No personal access token is required. Individual workflows retain their manual triggers.
+
+Automatic Android version codes use seconds since 1 January 2024 plus 1,000,000, or the most recently published manifest's code plus one, whichever is higher. Release history is paginated; prereleases count for version numbering and unpublished drafts do not. This preserves increasing versions when different workflows run or counters reset. Automatic tags are `v0.1.<versionCode>`; explicit version tags keep their supplied name. Network errors or an invalid previous manifest stop publication instead of silently resetting the version.
+
+Optional repository variables (blank uses the default):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AUTO_DEPLOY_API` | `true` | Set `false` to keep deployment manual |
+| `AUTO_RELEASE` | `true` | Set `false` to keep signed releases manual |
+| `AUTO_UPLOAD_PLAY` | `true` | Set `false` to keep Play drafts manual |
+| `PLAY_TRACK` | `internal` | Automatic draft track: internal, alpha, beta or production |
+| `CLEANUP_SUCCESS_DAYS` | `1` | Completed successful run retention, 1–90 days |
+| `CLEANUP_FAILURE_DAYS` | `7` | Other completed run retention, 1–90 days |
+
+Only configured automatic steps run; for example, Cloudflare deployment works before signing keys are added. After adding credentials, use **Test and build → Run workflow → main** to run the complete chain without another commit. GitHub environment approval rules, if you configure them, still apply. Uploading this project does not enable a workflow that you previously disabled in GitHub; enable it through its Actions page.
+
+To create your initial signing key with JDK `keytool`, run this once in a secure local directory:
+
+```powershell
+keytool -genkeypair -v -storetype JKS -keystore parcelbridge-release.jks -alias parcelbridge -keyalg RSA -keysize 3072 -validity 10000
+[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path .\parcelbridge-release.jks))) | Set-Clipboard
+```
+
+Paste the clipboard only into `ANDROID_KEYSTORE_BASE64`. Set `ANDROID_KEY_ALIAS` to `parcelbridge`, and add the keystore and key passwords as the two password secrets. Keep a secure backup of this key and passwords; creating a different key later prevents existing direct installations from updating. If you already distribute ParcelBridge, use that existing release key instead of generating a replacement.
 
 The release manifest uses public GitHub download links. **The direct update channel requires a public release repository.** A private repo needs a separate authenticated artifact-hosting design before direct updates will work.
 

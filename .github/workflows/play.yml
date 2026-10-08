@@ -10,8 +10,19 @@ on:
         type: choice
         options: [internal, alpha, beta, production]
         default: internal
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      track:
+        type: string
+        default: internal
 permissions:
   contents: read
+concurrency:
+  group: parcelbridge-play-upload
+  cancel-in-progress: false
 jobs:
   upload:
     runs-on: ubuntu-latest

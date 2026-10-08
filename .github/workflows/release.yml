@@ -2,17 +2,37 @@ name: Signed Android release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      upload_play:
+        description: Upload a Google Play draft if credentials are configured
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      upload_play:
+        type: boolean
+        default: true
+    outputs:
+      tag:
+        value: ${{ jobs.release.outputs.tag }}
 permissions:
   contents: read
+concurrency:
+  group: parcelbridge-signed-release
+  cancel-in-progress: false
 jobs:
   release:
     runs-on: ubuntu-latest
     environment: production
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      play: ${{ steps.play.outputs.enabled }}
     env:
       API_BASE_URL: ${{ vars.API_BASE_URL }}
-      APP_VERSION_CODE: ${{ github.run_number }}
+      GH_TOKEN: ${{ github.token }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -27,6 +47,11 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: api/package-lock.json
+      - name: Choose an increasing Android version
+        id: version
+        env:
+          REQUESTED_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: node scripts/release-version.mjs
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
@@ -37,12 +62,13 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          test -n "$API_BASE_URL" && test -n "$KEYSTORE_BASE64"
-          test -n "$ANDROID_KEYSTORE_PASSWORD" && test -n "$ANDROID_KEY_ALIAS" && test -n "$ANDROID_KEY_PASSWORD"
+          test -n "$API_BASE_URL"
+          test -n "$KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-          echo "APP_VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-          echo "APP_VERSION_CODE=$((APP_VERSION_CODE + 1000))" >> "$GITHUB_ENV"
       - run: npm ci && npm run check && npm test && npm audit --omit=dev --audit-level=high
         working-directory: api
       - run: gradle --no-daemon testDirectReleaseUnitTest testPlayReleaseUnitTest lintDirectRelease lintPlayRelease assembleDirectRelease bundlePlayRelease
@@ -54,13 +80,44 @@ jobs:
           node scripts/release-manifest.mjs
       - name: Publish GitHub APK release
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/parcelbridge.apk release/parcelbridge-play.aab release/update.json --verify-tag --generate-notes
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          gh release create "$RELEASE_TAG" release/parcelbridge.apk release/parcelbridge-play.aab release/update.json --target "$GITHUB_SHA" --draft --generate-notes
+          if [ "$PRERELEASE" = true ]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --latest
+          fi
+          echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: signed-release
           path: release/
           if-no-files-found: error
+          retention-days: 7
       - name: Remove temporary signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
+      - name: Check optional Play draft configuration
+        id: play
+        env:
+          UPLOAD_PLAY_REQUESTED: ${{ (github.event_name == 'push' && github.ref_type == 'tag') || inputs.upload_play }}
+          AUTO_UPLOAD_PLAY: ${{ vars.AUTO_UPLOAD_PLAY }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python3 - <<'PY'
+          import os
+          value = os.environ['AUTO_UPLOAD_PLAY'].strip().lower()
+          assert value in ('', 'true', 'false'), 'AUTO_UPLOAD_PLAY must be true or false'
+          enabled = os.environ['UPLOAD_PLAY_REQUESTED'] == 'true' and value != 'false' and bool(os.environ['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'enabled={str(enabled).lower()}\n')
+          PY
+  play:
+    needs: release
+    if: needs.release.outputs.play == 'true'
+    uses: ./.github/workflows/play.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+      track: ${{ vars.PLAY_TRACK || 'internal' }}
+    secrets: inherit

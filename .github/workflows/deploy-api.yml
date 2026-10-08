@@ -1,8 +1,12 @@
 name: Deploy Cloudflare API
 on:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
+concurrency:
+  group: parcelbridge-api-deploy
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -22,11 +26,13 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: api/package-lock.json
-      - run: npm ci && npm run check && npm test
+      - run: npm ci && npm run check && npm test && npm audit --omit=dev --audit-level=high
       - name: Check configuration
         run: |
-          test -n "$TURSO_DATABASE_URL" && test -n "$TURSO_AUTH_TOKEN"
-          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$TURSO_DATABASE_URL"
+          test -n "$TURSO_AUTH_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
       - run: npm run migrate
       - name: Deploy code and private database bindings
         run: |

@@ -1,0 +1,31 @@
+name: Clean completed Actions runs
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Test and build, Signed Android release, Deploy Cloudflare API, Upload Google Play draft]
+    types: [completed]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: parcelbridge-actions-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Delete expired completed runs and their artifacts
+        uses: actions/github-script@v8
+        env:
+          CLEANUP_SUCCESS_DAYS: ${{ vars.CLEANUP_SUCCESS_DAYS || '1' }}
+          CLEANUP_FAILURE_DAYS: ${{ vars.CLEANUP_FAILURE_DAYS || '7' }}
+        with:
+          script: |
+            const cleanup = require('./scripts/cleanup-runs.cjs');
+            await cleanup({ github, context, core, env: process.env });
