@@ -1,0 +1,12 @@
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const repository=process.env.GITHUB_REPOSITORY;
+const tag=process.env.GITHUB_REF_NAME;
+const versionCode=Number(process.env.APP_VERSION_CODE);
+assert.match(repository ?? '', /^[\w.-]+\/[\w.-]+$/);
+assert.match(tag ?? '', /^v\d+\.\d+\.\d+(?:-[\w.-]+)?$/);
+assert.ok(Number.isSafeInteger(versionCode) && versionCode>0);
+const apk=readFileSync('release/parcelbridge.apk');
+assert.ok(apk.length>0);
+writeFileSync('release/update.json',JSON.stringify({versionCode,versionName:tag.slice(1),apkUrl:`https://github.com/${repository}/releases/download/${tag}/parcelbridge.apk`,sha256:createHash('sha256').update(apk).digest('hex')},null,2)+'\n');

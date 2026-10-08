@@ -1,0 +1,37 @@
+name: Deploy Cloudflare API
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: api
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci && npm run check && npm test
+      - name: Check configuration
+        run: |
+          test -n "$TURSO_DATABASE_URL" && test -n "$TURSO_AUTH_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+      - run: npm run migrate
+      - name: Deploy code and private database bindings
+        run: |
+          node -e 'require("node:fs").writeFileSync("secrets.json", JSON.stringify({TURSO_DATABASE_URL:process.env.TURSO_DATABASE_URL,TURSO_AUTH_TOKEN:process.env.TURSO_AUTH_TOKEN}), {mode:0o600})'
+          npx wrangler deploy --secrets-file secrets.json --var "GITHUB_REPOSITORY:$GITHUB_REPOSITORY"
+      - name: Delete temporary secrets
+        if: always()
+        run: rm -f secrets.json
