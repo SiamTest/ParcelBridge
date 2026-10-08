@@ -15,4 +15,4 @@ Completed locally on the source in this archive:
 
 The app has not been exercised on a physical phone or emulator. Live Cloudflare/Turso behavior, real parcel handling, signed release upgrades and Google Play update delivery still need testing with your configured accounts and signing keys.
 
-The GitHub workflows are included but were not run in GitHub. Upload the contents of the `ParcelBridge` folder, including `.github`, to trigger CI.
+The supplied GitHub Actions logs confirm the API job passed. The Android job stopped before compilation because `setup-android@v3` requested the unavailable legacy `tools` package. Both CI and signed-release workflows now explicitly request `platform-tools`, `platforms;android-36` and `build-tools;35.0.0`. The package names match the locally installed SDK used for the successful builds above, and both workflow inputs were checked against the action's implementation. A GitHub rerun of this fix is still pending; upload the corrected workflows to trigger it.
