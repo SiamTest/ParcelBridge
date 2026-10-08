@@ -122,19 +122,32 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      # The checked-out source may not contain api/package-lock.json on every ref.
+      # Missing cache metadata must not break the Node toolchain setup.
+      - name: Detect API lockfile for optional npm caching
+        id: npm-lock
+        shell: bash
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/api/package-lock.json" ]; then
+            echo 'cache=npm' >> "$GITHUB_OUTPUT"
+          else
+            echo 'cache=' >> "$GITHUB_OUTPUT"
+            echo '::warning::api/package-lock.json is absent in this checkout; npm caching disabled.'
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
+          cache: ${{ steps.npm-lock.outputs.cache }}
           cache-dependency-path: api/package-lock.json
       - name: Choose an increasing Android version
         id: version
         env:
           REQUESTED_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: node scripts/release-version.mjs
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: 'false'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'

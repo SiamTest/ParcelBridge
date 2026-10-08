@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "parcelbridge-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-08",
+  "workers_dev": true,
+  "vars": {
+    "CURRENCY": "BDT",
+    "BASE_FEE_MINOR": "6000",
+    "PER_KM_MINOR": "1000",
+    "RIDER_SHARE_PERCENT": "85",
+    "MAX_COD_MINOR": "1000000",
+    "SERVICE_RADIUS_KM": "30",
+    "CITY_LAT": "23.0144",
+    "CITY_LNG": "91.3966",
+    "CITY_RADIUS_KM": "3",
+    "GITHUB_REPOSITORY": "SiamTest/ParcelBridge"
+  },
+  "triggers": { "crons": ["0 3 * * *"] }
+}

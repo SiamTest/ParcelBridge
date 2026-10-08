@@ -21,10 +21,22 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      # The checked-out source may not contain api/package-lock.json on every ref.
+      # Missing cache metadata must not break the Node toolchain setup.
+      - name: Detect API lockfile for optional npm caching
+        id: npm-lock
+        shell: bash
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/api/package-lock.json" ]; then
+            echo 'cache=npm' >> "$GITHUB_OUTPUT"
+          else
+            echo 'cache=' >> "$GITHUB_OUTPUT"
+            echo '::warning::api/package-lock.json is absent in this checkout; npm caching disabled.'
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
+          cache: ${{ steps.npm-lock.outputs.cache }}
           cache-dependency-path: api/package-lock.json
       - run: npm ci && npm run check && npm test && npm audit --omit=dev --audit-level=high
       - name: Check configuration

@@ -1,0 +1,9 @@
+<resources>
+    <color name="brand_primary">#85D7B5</color><color name="brand_on_primary">#003827</color>
+    <color name="brand_primary_container">#00513C</color><color name="brand_on_primary_container">#C0F1DC</color>
+    <color name="brand_secondary">#B6CCBF</color><color name="brand_secondary_container">#334B40</color><color name="brand_on_secondary_container">#D2E8DC</color>
+    <color name="brand_tertiary">#EEBD89</color><color name="brand_tertiary_container">#5F401F</color><color name="brand_on_tertiary_container">#FFDCB7</color>
+    <color name="brand_surface">#0E1511</color><color name="brand_on_surface">#DCE5DC</color><color name="brand_on_surface_variant">#C1CCC3</color>
+    <color name="brand_surface_low">#17201A</color><color name="brand_surface_high">#27302A</color><color name="brand_surface_highest">#323B35</color><color name="brand_surface_lowest">#09100C</color>
+    <color name="brand_outline">#8B968D</color><color name="brand_outline_variant">#424C46</color>
+</resources>
