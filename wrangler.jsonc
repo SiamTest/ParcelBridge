@@ -1,9 +1,0 @@
-{
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "ankur-website",
-	"compatibility_date": "2026-10-05",
-	"assets": {
-		"directory": "./build",
-		"not_found_handling": "404-page"
-	}
-}

@@ -1,23 +1,14 @@
-node_modules
-
-# Output
-.output
-.vercel
-.netlify
-.wrangler
-/.svelte-kit
-/build
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Env
-.env
-.env.*
+node_modules/
+.gradle/
+build/
+local.properties
+.dev.vars
+.env*
 !.env.example
-!.env.test
-
-# Vite
-vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
+*.db*
+*.jks
+*.keystore
+.wrangler/
+tools/
+secrets.json
+__pycache__/
