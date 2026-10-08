@@ -1,27 +1,27 @@
-# Verification — 8 October 2026
+# Verification · Ankur Website 1.0.2
 
-Completed locally on the source in this archive:
+Verified on 5 October 2026.
 
-- TypeScript type checks: passed.
-- Backend tests: 14 passed, including simultaneous job acceptance, Feni coverage, private data, delivery codes, returns and COD.
-- Google Play publishing-script tests: 2 passed using mocked HTTP requests; no Play upload was performed.
-- Release-manifest self-check: version, download path and SHA-256 output passed.
-- Cloudflare Worker deployment dry run: passed; no cloud deployment was performed.
-- Dependency audit after installing the pinned versions: zero known vulnerabilities reported.
-- Android `testDirectDebugUnitTest` and `testPlayDebugUnitTest`: passed, 3 tests per variant.
-- Android `lintDirectDebug` and `lintPlayDebug`: passed with no errors. Style/dependency-version warnings remain.
-- Android `assembleDirectDebug` and `assemblePlayDebug`: passed on JDK 17 / Gradle 8.11.1 / SDK 36.
-- XML resources, dependency lock and wrapper configuration: checked.
+Version 1.0.2 restores the SoundDesigner expansion styles for both join buttons. At 320, 360, 390, 768 and 1440px, browser checks confirm intermediate animated height, width expansion, 100/150ms staged options, chevron-to-X rotation, no clipped menu items, Escape with focus return, outside-click closing, link selection and reduced motion. No browser page errors were reported. See `preview/mobile-hero-expanded.png` and `preview/mobile-footer-expanded.png`. Svelte checks, lint, tests and the production build passed for 1.0.2.
 
-Automation update verified locally:
+Version 1.0.1 restores the original scroll animation on the hero navigation bar. Browser checks confirm an intermediate animated width, a narrower pill after scrolling, expansion on return to the top, all controls fitting at 320–1440px, working mobile menus, reduced motion and no page errors. See `preview/mobile-header-scrolled.png` and `preview/desktop-header-scrolled.png`.
 
-- Six Python script tests passed: four automation planning cases and two mocked Play publishing cases.
-- Eleven Node script tests passed: cleanup retention and rerun protection, automatic manifest URLs, increasing release versions, paginated prereleases, immutable releases, and failed/untrusted manifest handling.
-- All five GitHub workflow files passed actionlint 1.7.12; shellcheck was not available.
-- Eight workflow shell blocks passed Bash syntax checks; the embedded Python block also parsed successfully. No deployment, signing or publishing commands were executed by these syntax checks.
-- Cleanup tests use mocked GitHub APIs; no real runs, artifacts or releases were deleted.
-- New deployment/release/Play chaining was not executed on GitHub. Cloudflare/Turso deployment and signed production builds were not repeated for this automation-only change. Android app source is unchanged from the local builds listed above.
+The complete creative-tool interaction checks below were performed for 1.0.0; those components are unchanged in 1.0.1. Code checks, tests and the production build were rerun for 1.0.1.
 
-The app has not been exercised on a physical phone or emulator. Live Cloudflare/Turso behavior, real parcel handling, signed release upgrades and Google Play update delivery still need testing with your configured accounts and signing keys.
+- Svelte diagnostics: zero errors, zero warnings.
+- Prettier and ESLint: passed.
+- Node tests: 2 passed (scroll observer lifecycle and public content validity).
+- Production static build: passed.
+- Wrangler deployment dry run: passed; live deployment requires the owner's Cloudflare credentials.
+- Browser: 320, 360, 390, 768, 1024 and 1440px widths; no horizontal overflow.
+- Expanding join menu, mobile navigation and Escape-to-close: passed.
+- Poetry draft persistence after reload and UTF-8 text download: passed.
+- User-initiated musical notes and animated feedback: passed.
+- Canvas drawing, clearing, keyboard stamps and PNG download: passed.
+- Native FAQ expansion, Bengali font loading and scroll reveals: passed.
+- Reduced-motion preference and readable no-JavaScript content: passed.
+- No browser page errors or console errors while exercising those flows with the configured Content Security Policy.
 
-The supplied GitHub Actions logs confirm the API job passed. The Android job stopped before compilation because `setup-android@v3` requested the unavailable legacy `tools` package. Both CI and signed-release workflows now explicitly request `platform-tools`, `platforms;android-36` and `build-tools;35.0.0`. The package names match the locally installed SDK used for the successful builds above, and both workflow inputs were checked against the action's implementation. A GitHub rerun of this fix is still pending; upload the corrected workflows to trigger it.
+`preview/desktop.png`, `preview/desktop-hero.png` and `preview/mobile.png` show the finished website. Responsive viewport checks were performed in Chromium, not on a physical phone.
+
+Official contact details, a precise premises address, confirmed events and a final public URL still need to be supplied by the organization. These fields are editable in `src/lib/site.ts`.

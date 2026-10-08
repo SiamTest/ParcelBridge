@@ -1,0 +1,52 @@
+name: Check and deploy to Cloudflare
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      worker_name:
+        description: 'Cloudflare Worker name (optional override)'
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ankur-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ankur-website
+          path: build
+          retention-days: 7
+      - name: Deploy to Cloudflare
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_NAME: ${{ inputs.worker_name || vars.CLOUDFLARE_WORKER_NAME || 'ankur-website' }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo 'Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in GitHub repository Actions secrets.'
+            exit 1
+          fi
+          if ! [[ "$WORKER_NAME" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]; then
+            echo 'Worker name must be 1-63 lowercase letters, digits or hyphens; start with a letter or digit.'
+            exit 1
+          fi
+          npx wrangler deploy --name "$WORKER_NAME"
