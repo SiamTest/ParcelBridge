@@ -27,6 +27,14 @@ test('manual tag and prerelease are preserved', async () => {
   assert.equal(result.versionName, '1.2.3-beta.1');
   assert.equal(result.prerelease, true);
 });
+test('test builds receive debug tags and never become stable releases', async () => {
+  const result = await releaseVersion({ ...env, RELEASE_SIGNED: 'false' }, mock(1001), now);
+  assert.equal(result.tag, `v0.1.${result.versionCode}-debug`);
+  assert.equal(result.prerelease, true);
+  const manual = await releaseVersion({ ...env, RELEASE_SIGNED: 'false', REQUESTED_TAG: 'v1.2.3' }, mock(1001), now);
+  assert.equal(manual.tag, 'v1.2.3');
+  assert.equal(manual.prerelease, true);
+});
 test('network errors and malformed manifests cannot reset the previous version', async () => {
   await assert.rejects(releaseVersion(env, mock(1001, 403), now), /Cannot inspect/);
   await assert.rejects(releaseVersion(env, mock('1001'), now), /Invalid previous/);

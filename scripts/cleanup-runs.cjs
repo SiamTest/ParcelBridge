@@ -1,15 +1,18 @@
 const assert = require('node:assert/strict');
 
 module.exports = async function cleanup({ github, context, core, env, now = Date.now() }) {
+  const mode = env.CLEANUP_MODE || 'expired';
+  assert.ok(['expired', 'all_completed'].includes(mode), 'Cleanup mode must be expired or all_completed');
   const successDays = Number(env.CLEANUP_SUCCESS_DAYS || 1);
   const failureDays = Number(env.CLEANUP_FAILURE_DAYS || 7);
-  for (const days of [successDays, failureDays]) assert.ok(Number.isInteger(days) && days >= 1 && days <= 90, 'Cleanup retention must be 1–90 days');
+  for (const days of [successDays, failureDays]) assert.ok(Number.isInteger(days) && days >= 0 && days <= 90, 'Cleanup retention must be 0–90 days');
   const workflows = new Set(['ci.yml', 'release.yml', 'deploy-api.yml', 'play.yml', 'cleanup.yml']);
   const removable = run => {
+    if (run.status !== 'completed' || !run.conclusion || Number(run.id) === Number(context.runId)) return false;
+    if (mode === 'all_completed') return true;
     const finished = Date.parse(run.updated_at);
     const days = ['success', 'skipped', 'neutral'].includes(run.conclusion) ? successDays : failureDays;
-    return run.status === 'completed' && run.conclusion && Number(run.id) !== Number(context.runId)
-      && workflows.has(run.path?.split('/').pop()) && Number.isFinite(finished)
+    return workflows.has(run.path?.split('@')[0].split('/').pop()) && Number.isFinite(finished)
       && now - finished >= days * 86400000;
   };
   // Collect all pages before deleting; deleting during pagination shifts later pages.
@@ -25,7 +28,11 @@ module.exports = async function cleanup({ github, context, core, env, now = Date
       if (error.status !== 404) throw error;
     }
   }
-  core.info(`Deleted ${deleted} expired runs and their artifacts. GitHub Releases and active runs are kept.`);
-  await core.summary.addRaw(`Deleted ${deleted} expired Actions runs. Success retention: ${successDays} day(s); other completed runs: ${failureDays} day(s).`).write();
+  const details = mode === 'all_completed'
+    ? 'All completed runs selected, including retired workflows. The current cleanup and active runs are kept.'
+    : `Success retention: ${successDays} day(s); other completed runs: ${failureDays} day(s). Recent or unrelated runs are kept. To clean recent runs now, run this workflow manually with mode all_completed.`;
+  const summary = `Deleted ${deleted} of ${runs.length} inspected Actions runs and their artifacts. Mode: ${mode}. ${details} GitHub Releases are kept.`;
+  core.info(summary);
+  await core.summary.addRaw(summary).write();
   return deleted;
 };

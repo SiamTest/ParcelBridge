@@ -63,8 +63,6 @@ jobs:
     environment: production
     outputs:
       deploy: ${{ steps.plan.outputs.deploy }}
-      release: ${{ steps.plan.outputs.release }}
-      play: ${{ steps.plan.outputs.play }}
     steps:
       - uses: actions/checkout@v4
       - name: Check current source and available credentials
@@ -92,15 +90,4 @@ jobs:
     needs: automation
     if: needs.automation.outputs.deploy == 'true'
     uses: ./.github/workflows/deploy-api.yml
-    secrets: inherit
-  release:
-    needs: [automation, deploy]
-    if: >-
-      !cancelled() && needs.automation.outputs.release == 'true' &&
-      (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
-    permissions:
-      contents: write
-    uses: ./.github/workflows/release.yml
-    with:
-      upload_play: ${{ needs.automation.outputs.play == 'true' }}
     secrets: inherit

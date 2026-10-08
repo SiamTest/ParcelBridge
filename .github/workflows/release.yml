@@ -1,7 +1,11 @@
-name: Signed Android release
+name: Android release
 on:
   push:
     tags: ['v*']
+  workflow_run:
+    workflows: [Test and build]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       upload_play:
@@ -18,11 +22,50 @@ on:
         value: ${{ jobs.release.outputs.tag }}
 permissions:
   contents: read
+env:
+  RELEASE_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 concurrency:
   group: parcelbridge-signed-release
   cancel-in-progress: false
 jobs:
+  configuration:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch'))
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+      - name: Check automatic release configuration
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_BASE_URL: ${{ vars.API_BASE_URL || secrets.API_BASE_URL }}
+          AUTO_RELEASE: ${{ vars.AUTO_RELEASE }}
+          AUTO_UPLOAD_PLAY: ${{ vars.AUTO_UPLOAD_PLAY }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
+            CURRENT_MAIN_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+            export CURRENT_MAIN_SHA
+            python3 scripts/automation-plan.py
+          else
+            echo 'release=true' >> "$GITHUB_OUTPUT"
+          fi
   release:
+    needs: configuration
+    if: needs.configuration.outputs.release == 'true'
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -38,25 +81,34 @@ jobs:
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
       - name: Validate release configuration and restore signing key
+        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          missing=false
-          for setting in API_BASE_URL KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+          if [ -z "$API_BASE_URL" ]; then
+            echo '::error::Missing API_BASE_URL. Add your deployed HTTPS Worker origin (without /v1) as a variable or secret at repository scope or in the production environment.'
+            exit 1
+          fi
+          signed=true
+          for setting in KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             if [ -z "${!setting}" ]; then
               name="$setting"
               [ "$setting" != KEYSTORE_BASE64 ] || name=ANDROID_KEYSTORE_BASE64
-              echo "::error::Missing $name. Configure it in Settings > Secrets and variables > Actions at repository scope or in the production environment."
-              missing=true
+              echo "Signing is optional: $name is not configured."
+              signed=false
             fi
           done
-          if [ "$missing" = true ]; then
-            echo 'API_BASE_URL accepts a variable or secret and must be your deployed HTTPS Worker origin (without /v1). Signing settings must be secrets.'
-            exit 1
+          echo "signed=$signed" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_SIGNED=$signed" >> "$GITHUB_ENV"
+          if [ "$signed" = true ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo 'Building an installable debug APK as a test prerelease. Google Play upload is skipped.' >> "$GITHUB_STEP_SUMMARY"
           fi
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -79,27 +131,43 @@ jobs:
           gradle-version: '8.11.1'
       - run: npm ci && npm run check && npm test && npm audit --omit=dev --audit-level=high
         working-directory: api
-      - run: gradle --no-daemon testDirectReleaseUnitTest testPlayReleaseUnitTest lintDirectRelease lintPlayRelease assembleDirectRelease bundlePlayRelease
-      - name: Prepare signed release assets
+      - name: Build signed production packages
+        if: steps.signing.outputs.signed == 'true'
+        run: gradle --no-daemon testDirectReleaseUnitTest testPlayReleaseUnitTest lintDirectRelease lintPlayRelease assembleDirectRelease bundlePlayRelease
+      - name: Build test APK without release signing secrets
+        if: steps.signing.outputs.signed != 'true'
+        run: gradle --no-daemon testDirectDebugUnitTest lintDirectDebug assembleDirectDebug
+      - name: Prepare release assets
         run: |
           mkdir -p release
-          cp app/build/outputs/apk/direct/release/app-direct-release.apk release/parcelbridge.apk
-          cp app/build/outputs/bundle/playRelease/app-play-release.aab release/parcelbridge-play.aab
+          if [ "$RELEASE_SIGNED" = true ]; then
+            cp app/build/outputs/apk/direct/release/app-direct-release.apk release/parcelbridge.apk
+            cp app/build/outputs/bundle/playRelease/app-play-release.aab release/parcelbridge-play.aab
+          else
+            cp app/build/outputs/apk/direct/debug/app-direct-debug.apk release/parcelbridge.apk
+          fi
           node scripts/release-manifest.mjs
       - name: Publish GitHub APK release
         env:
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
-          gh release create "$RELEASE_TAG" release/parcelbridge.apk release/parcelbridge-play.aab release/update.json --target "$GITHUB_SHA" --draft --generate-notes
+          assets=(release/parcelbridge.apk release/update.json)
+          notes=()
+          if [ "$RELEASE_SIGNED" = true ]; then
+            assets+=(release/parcelbridge-play.aab)
+          else
+            notes=(--title "ParcelBridge $RELEASE_TAG - test APK" --notes 'Installable debug APK for testing. Release signing secrets are not configured. Google Play upload is skipped. Test builds use runner-generated debug keys and cannot update production installations; installing another test build may also require reinstalling.')
+          fi
+          gh release create "$RELEASE_TAG" "${assets[@]}" --target "$RELEASE_SOURCE_SHA" --draft --generate-notes "${notes[@]}"
           if [ "$PRERELEASE" = true ]; then
-            gh release edit "$RELEASE_TAG" --draft=false --prerelease
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
           else
             gh release edit "$RELEASE_TAG" --draft=false --latest
           fi
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: signed-release
+          name: android-release
           path: release/
           if-no-files-found: error
           retention-days: 7
@@ -109,7 +177,7 @@ jobs:
       - name: Check optional Play draft configuration
         id: play
         env:
-          UPLOAD_PLAY_REQUESTED: ${{ (github.event_name == 'push' && github.ref_type == 'tag') || inputs.upload_play }}
+          UPLOAD_PLAY_REQUESTED: ${{ github.event_name == 'workflow_run' || (github.event_name == 'push' && github.ref_type == 'tag') || inputs.upload_play }}
           AUTO_UPLOAD_PLAY: ${{ vars.AUTO_UPLOAD_PLAY }}
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
@@ -117,7 +185,7 @@ jobs:
           import os
           value = os.environ['AUTO_UPLOAD_PLAY'].strip().lower()
           assert value in ('', 'true', 'false'), 'AUTO_UPLOAD_PLAY must be true or false'
-          enabled = os.environ['UPLOAD_PLAY_REQUESTED'] == 'true' and value != 'false' and bool(os.environ['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'])
+          enabled = os.environ['RELEASE_SIGNED'] == 'true' and os.environ['UPLOAD_PLAY_REQUESTED'] == 'true' and value != 'false' and bool(os.environ['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'])
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'enabled={str(enabled).lower()}\n')
           PY

@@ -32,11 +32,12 @@ export async function releaseVersion(env, request = fetch, now = Date.now()) {
   // A clock-based floor keeps versions increasing across different workflow run counters.
   const versionCode = Math.max(Math.floor(now / 1000) - 1704067200 + 1000000, previous + 1);
   assert.ok(Number.isSafeInteger(versionCode) && versionCode > 0 && versionCode <= 2100000000, 'Android version code exhausted');
-  const tag = env.REQUESTED_TAG || `v0.1.${versionCode}`;
+  const signed = env.RELEASE_SIGNED !== 'false';
+  const tag = env.REQUESTED_TAG || `v0.1.${versionCode}${signed ? '' : '-debug'}`;
   assert.match(tag, /^v\d+\.\d+\.\d+(?:-[\w.-]+)?$/);
   const existing = await request(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers, signal: AbortSignal.timeout(30000) });
   assert.equal(existing.status, 404, existing.ok ? 'This release already exists; published assets are immutable' : `Cannot check release tag (${existing.status})`);
-  return { versionCode, versionName: tag.slice(1), tag, prerelease: tag.includes('-') };
+  return { versionCode, versionName: tag.slice(1), tag, prerelease: !signed || tag.includes('-') };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -34,3 +34,34 @@ API URL release-configuration fix — 9 October 2026:
 - Seven Python tests and eleven Node tests passed. The new release guard test executes the actual workflow shell block with each required setting missing and with complete mock configuration, checking errors, absence of secret values in output and signing-key restoration. Play publishing tests use mocked HTTP calls.
 - All five workflow YAML files parsed and all 22 shell blocks passed `bash -n`. API URL fallback consistency and the early guard position were checked. Actionlint is unavailable in this environment and was not rerun.
 - App and API source and versions are unchanged. No Android build, live deployment, signing with real keys, GitHub release or Play upload was performed for this workflow fix. GitHub settings cannot be inspected from this archive; configure `API_BASE_URL` if it is absent from both Variables and Secrets.
+
+
+Optional Android signing — 9 October 2026:
+
+- Android signing secrets are now optional in both automation planning and manual/tagged releases. `API_BASE_URL` remains required. Complete signing configuration builds production-signed APK/AAB assets; missing or incomplete signing configuration builds an installable DirectDebug APK and skips Google Play. Invalid supplied signing material still fails instead of falling back.
+- Test builds receive automatic `-debug` tags and are always prereleases, including explicit plain version tags. They are never marked latest. The stable updater continues to use the latest non-prerelease API, and no updater signature checks were weakened. Test release notes explain that runner-generated debug keys cannot update production installations and later test builds may need a reinstall.
+- Twelve Python tests and twelve Node tests passed. Checks execute the real workflow configuration, asset-packaging and Play-gating shell blocks. Publication checks use a fake `gh` executable and dummy APK/AAB bytes; no GitHub releases or Play drafts were actually uploaded. Tests cover all missing signing fields, no signing fields, complete signing configuration, invalid Base64, required API URL, test tags, explicit tags and monotonic versions after prereleases.
+- All five YAML workflows, all 23 shell blocks and embedded Python parsed. Signed and test build conditions were checked. Actionlint and an Android SDK/Gradle build environment are unavailable in this session, so actionlint and actual APK/AAB builds were not rerun.
+- Changes are limited to automation scripts, workflows, tests and instructions; Android and Worker source/version settings are unchanged. Deployment and real signing remain untested here. Upload the corrected files and run the renamed **Android release** workflow on the updated branch.
+
+
+Actions cleanup fix — 9 October 2026:
+
+- The screenshot shows recent runs below the original one-day/seven-day retention thresholds. Automatic expired mode retains these by default and now reports the policy and manual cleanup option in its summary.
+- Fixed workflow-path matching for GitHub API paths containing a ref suffix (`ci.yml@main` or `ci.yml@refs/heads/main`). The previous filename comparison rejected these paths.
+- Cleanup completion triggers now include the renamed **Android release** workflow as well as its legacy name.
+- Manual dispatch defaults to `all_completed`, which deletes completed repository runs immediately, including retired workflow paths. `expired` remains selectable for retention-based cleanup. Active/queued runs and the current cleanup are always kept, and each candidate is re-read before deletion to protect reruns. Published GitHub Releases are untouched.
+- Retention now supports 0–90 days. Set both repository retention variables to string `0` for immediate automatic cleanup of the project workflows; the default automatic retention remains 1/7 days. Deleting runs also removes their logs and artifacts.
+- Seventeen Node tests and twelve Python tests passed (29 total). All five workflow YAML files, 23 Bash blocks and embedded Python passed syntax checks. Manual default mode, release trigger name and write permissions were verified. Cleanup tests use mocked GitHub API methods: no real runs were deleted. Actionlint is unavailable and was not rerun.
+- This update includes the preceding optional-signing fix. Android and Worker source/version settings are unchanged; no app builds, deployment or GitHub execution was performed.
+
+
+Separate automatic Android release — 9 October 2026:
+
+- `Android release` now listens for successful completion of `Test and build` on `main` and appears as a separate Actions run. CI no longer also calls it as a reusable release job, preventing duplicate automatic publication paths. Tag/manual/reusable triggers remain available.
+- Automatic release configuration rejects failed/cancelled checks, pull-request events, fork repositories and other branches. The tested source SHA is used for configuration, checkout and the published release target. `workflow_run` supplies the default-branch SHA as `GITHUB_SHA`, so shared planning now explicitly uses `RELEASE_SOURCE_SHA` when provided.
+- A tested commit that is no longer current, a missing API URL, or `AUTO_RELEASE=false` skips automatic publication with a summary. Manual/tagged releases remain available when automatic releases are disabled. Optional signing and signed-only Play upload behavior remain intact.
+- API deployment remains inside Test and build. A failed configured deployment makes that workflow fail, so the separate release is not published. Cleanup already watches the current release name. No personal access token or bot-created tag trigger is needed.
+- Fourteen Python tests and seventeen Node tests passed (31 total), including actual preflight-shell execution with mocked GitHub current-commit queries, tested/default SHA differences, stale commits, disabled release flags, missing API URL, manual/tag paths, and publication target verification. No real publishing or GitHub API mutations were performed by the tests.
+- All five workflow YAML files, 24 shell blocks and embedded Python parsed. Trigger names, exact checkout refs, duplicate-path removal and seven trusted/untrusted completion-condition cases were verified locally. Actionlint and Android builds were not rerun; a live GitHub Actions run remains pending.
+- Changes are limited to workflows, automation scripts, tests and instructions. Android and Worker source/version settings are unchanged. Upload the full corrected project on the default `main` branch and leave `AUTO_RELEASE` unset or `true` to enable the new chain.

@@ -20,7 +20,7 @@ Android delivery app for sellers and riders in Feni, Bangladesh. Kotlin app, Clo
 - Background status notifications, daily direct-update checks and optional automatic Wi-Fi downloads.
 - Direct APK updates verify the SHA-256 digest, package name, increasing version and signing certificate before installation.
 - Google Play flexible in-app updates in the Play build.
-- Automatic main-branch deployment, signed GitHub Releases, generated version codes and release notes, and optional Google Play draft uploads after checks pass.
+- Automatic main-branch deployment, GitHub Releases with optional production signing, generated version codes and release notes, and optional Google Play draft uploads after checks pass.
 - Automatic Actions cleanup: successful runs and artifacts expire after one day, failed/cancelled runs after seven days. Published releases are kept.
 - API request limits, SQL parameter binding, role checks, private customer details and scheduled session cleanup.
 
@@ -37,7 +37,7 @@ Android seller / rider / operator
 
 GitHub Actions: API tests + Android tests/lint/build
                automatic Cloudflare deployment
-               signed APK + signed Play AAB + update manifest + GitHub Release
+               Android APK + update manifest + GitHub Release (signed Play AAB when configured)
                optional Play draft upload + completed-run cleanup
 ```
 
@@ -103,34 +103,38 @@ Set repository variable `API_BASE_URL` to the deployed HTTPS Worker URL, with no
 | `ANDROID_KEY_PASSWORD` | Key password |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Optional Play draft upload service account |
 
-If a release reports `Missing API_BASE_URL`, open **Settings → Secrets and variables → Actions** and add `API_BASE_URL` under **Variables** (recommended) or **Secrets**, then rerun the workflow. The URL is embedded in the APK and is not confidential. Missing signing settings are also reported by name before build setup.
+If a release reports `Missing API_BASE_URL`, open **Settings → Secrets and variables → Actions** and add `API_BASE_URL` under **Variables** (recommended) or **Secrets**, then rerun the workflow. The URL is embedded in the APK and is not confidential. Signing settings are optional. If any of the four signing secrets are missing, the workflow builds an installable debug APK and publishes it as a test prerelease. Google Play upload is skipped for test builds. All four secrets must be present to build production-signed packages; invalid supplied keys or passwords still fail the build.
 
 Keep signing keys and passwords in secure storage; future direct updates must use the same signing key. Do not put secret values in chat, app configuration, source files, or GitHub variables.
 
-1. **Test and build:** on pull requests, main pushes or manual runs; verifies the API and automation scripts, tests/lints both Android variants and uploads debug APK artifacts. Successful main runs continue into the workflows below. Pull requests only run checks. Main runs are serialized rather than cancelling a deployment mid-flight; a commit that is no longer main skips production work. The run summary lists missing configuration by name without printing secret values.
+1. **Test and build:** on pull requests, main pushes or manual runs; verifies the API and automation scripts, tests/lints both Android variants and uploads debug APK artifacts. Configured API deployment is a job inside this run. Once a trusted main-branch push or manual build succeeds (including its configured deployment), it automatically starts a separate **Android release** Action. Pull requests only run checks. Main runs are serialized rather than cancelling a deployment mid-flight; a commit that is no longer main skips production work. The run summary lists missing configuration by name without printing secret values.
 2. **Deploy Cloudflare API:** automatically called after checks when Cloudflare/Turso credentials exist, or run manually. Checks/tests, applies the additive initial schema and deploys the Worker plus private database bindings. It sets `GITHUB_REPOSITORY` to the current repository for direct updates. A failed deployment stops the following automatic release.
-3. **Signed Android release:** automatically called after checks/deployment when the API URL and four signing secrets exist. Builds a signed direct APK, a signed Play AAB and a checksummed manifest; uploads them to a draft GitHub Release and publishes only after all assets have uploaded. Release notes are generated automatically. Release assets are immutable; published releases are never overwritten. You can also run it manually or push a tag such as `v1.0.0`; tags containing a suffix such as `-beta.1` are published as prereleases, which the stable APK updater does not select.
-4. **Upload Google Play draft:** automatically called after publishing when the service-account secret exists, or run manually with a release tag and track. It downloads the AAB and uploads a draft through the Android Publisher API. Review and publish in Play Console. Play requires initial app setup and appropriate service-account access.
-5. **Clean completed Actions runs:** runs after workflow completion, every six hours, or manually. It deletes successful/skipped/neutral runs older than one day and other completed runs older than seven days, including their logs and artifacts. It keeps active runs, its current run, unrelated workflows and all GitHub Releases. Cleanup reads only default-branch code and rechecks each run before deletion in case someone has rerun it. Download debug APKs before the one-day cleanup deadline; failed-run artifacts have seven-day retention.
+3. **Android release:** automatically starts as a separate Action after **Test and build** succeeds on `main`, when the tested commit is still current, the API URL exists and `AUTO_RELEASE` is not `false`. It checks out and tags the exact tested commit, rather than the default-branch SHA supplied by the completion event. Failed/cancelled checks, failed configured API deployments, fork runs and pull requests do not publish releases. With all four signing secrets, it builds a production-signed direct APK, a signed Play AAB and a checksummed manifest. Otherwise it builds an installable debug APK and manifest for a clearly labelled test prerelease, without a Play AAB. It uploads assets to a draft GitHub Release and publishes only after all uploads succeed. Release notes are generated automatically and published assets are immutable. You can also run it manually or push a tag such as `v1.0.0`. Test builds are always prereleases and never marked latest, even for a tag without a suffix. The stable APK updater does not select them.
+4. **Upload Google Play draft:** automatically called after publishing a production-signed build when the service-account secret exists, or run manually with a release tag and track. It downloads the AAB and uploads a draft through the Android Publisher API. Review and publish in Play Console. Play requires initial app setup and appropriate service-account access.
+5. **Clean completed Actions runs:** automatic runs after workflow completion and every six hours use `expired` mode: successful/skipped/neutral runs expire after one day and other completed runs after seven days. Automatic cleanup covers the project workflows and keeps unrelated workflows. Manual runs default to `all_completed` mode, which immediately deletes completed runs from all workflows, including retired workflows, with their logs and artifacts. Select `expired` to follow the retention policy instead. Both modes keep active runs, the current cleanup run and all GitHub Releases. Cleanup reads only default-branch code and rechecks each candidate before deletion in case it has been rerun. Paths containing a ref suffix such as `ci.yml@main` are supported. The summary shows the mode, inspected/deleted counts and why recent runs were retained. Download any required Actions artifacts before using immediate cleanup.
 
-Called workflows appear as jobs inside the parent run. They are invoked directly through [reusable workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows); the pipeline does not rely on a bot-created tag triggering another workflow. No personal access token is required. Individual workflows retain their manual triggers.
+API deployment is invoked directly as a reusable job inside **Test and build**; the optional Play draft is a reusable job inside **Android release**. Automatic Android releases use a `workflow_run` completion trigger and appear as a separate run in Actions. The pipeline does not rely on a bot-created tag triggering another workflow, and CI no longer also calls the release workflow, so each successful push has one automatic publication path. No personal access token is required. Individual workflows retain their manual triggers.
 
-Automatic Android version codes use seconds since 1 January 2024 plus 1,000,000, or the most recently published manifest's code plus one, whichever is higher. Release history is paginated; prereleases count for version numbering and unpublished drafts do not. This preserves increasing versions when different workflows run or counters reset. Automatic tags are `v0.1.<versionCode>`; explicit version tags keep their supplied name. Network errors or an invalid previous manifest stop publication instead of silently resetting the version.
+Automatic Android version codes use seconds since 1 January 2024 plus 1,000,000, or the most recently published manifest's code plus one, whichever is higher. Release history is paginated; prereleases count for version numbering and unpublished drafts do not. This preserves increasing versions when different workflows run or counters reset. Automatic production tags are `v0.1.<versionCode>` and test tags are `v0.1.<versionCode>-debug`; explicit version tags keep their supplied name. Network errors or an invalid previous manifest stop publication instead of silently resetting the version.
 
 Optional repository variables (blank uses the default):
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `AUTO_DEPLOY_API` | `true` | Set `false` to keep deployment manual |
-| `AUTO_RELEASE` | `true` | Set `false` to keep signed releases manual |
+| `AUTO_RELEASE` | `true` | Set `false` to keep Android releases manual |
 | `AUTO_UPLOAD_PLAY` | `true` | Set `false` to keep Play drafts manual |
 | `PLAY_TRACK` | `internal` | Automatic draft track: internal, alpha, beta or production |
-| `CLEANUP_SUCCESS_DAYS` | `1` | Completed successful run retention, 1–90 days |
-| `CLEANUP_FAILURE_DAYS` | `7` | Other completed run retention, 1–90 days |
+| `CLEANUP_SUCCESS_DAYS` | `1` | Completed successful run retention, 0–90 days; `0` deletes immediately |
+| `CLEANUP_FAILURE_DAYS` | `7` | Other completed run retention, 0–90 days; `0` deletes immediately |
 
-Only configured automatic steps run; for example, Cloudflare deployment works before signing keys are added. After adding credentials, use **Test and build → Run workflow → main** to run the complete chain without another commit. GitHub environment approval rules, if you configure them, still apply. Uploading this project does not enable a workflow that you previously disabled in GitHub; enable it through its Actions page.
+To clean the runs visible in Actions now, open **Actions → Clean completed Actions runs → Run workflow**, use the default branch and select **all_completed**. The currently executing cleanup stays visible until a later cleanup. For immediate automatic cleanup, set both repository variables `CLEANUP_SUCCESS_DAYS` and `CLEANUP_FAILURE_DAYS` to `0`.
 
-To create your initial signing key with JDK `keytool`, run this once in a secure local directory:
+Only configured automatic steps run; for example, Cloudflare deployment works before signing keys are added. After adding credentials, use **Test and build → Run workflow → main** to start checks/deployment and then a separate Android release without another commit. GitHub environment approval rules, if you configure them, still apply. Uploading this project does not enable a workflow that you previously disabled in GitHub; enable it through its Actions page.
+
+You can leave the four Android signing secrets unset to publish a test APK. Test builds use runner-generated debug keys and cannot update a production installation; a later test build may also need a reinstall. Use production signing for stable updates and Google Play.
+
+To enable optional production signing, create your initial key with JDK `keytool` once in a secure local directory:
 
 ```powershell
 keytool -genkeypair -v -storetype JKS -keystore parcelbridge-release.jks -alias parcelbridge -keyalg RSA -keysize 3072 -validity 10000

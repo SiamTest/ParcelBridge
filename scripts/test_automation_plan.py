@@ -19,18 +19,41 @@ class AutomationPlanTests(unittest.TestCase):
         self.assertEqual(result, dict(deploy=True, release=True, play=True))
         self.assertNotIn("sensitive-test-value", summary)
 
-    def test_missing_signer_skips_release_and_play_but_deploys(self):
+    def test_missing_signer_releases_test_apk_and_skips_play(self):
+        signing = [key for key in self.configured() if key.startswith('ANDROID_')]
+        for key in signing:
+            env = self.configured()
+            del env[key]
+            result, summary = plan(env)
+            self.assertEqual(result, dict(deploy=True, release=True, play=False))
+            self.assertIn('test APK prerelease', summary)
+            self.assertIn(key, summary)
+            self.assertNotIn('sensitive-test-value', summary)
+
+    def test_no_signing_secrets_still_releases_test_apk(self):
+        env = {key: value for key, value in self.configured().items() if not key.startswith('ANDROID_')}
+        self.assertEqual(plan(env)[0], dict(deploy=True, release=True, play=False))
+
+    def test_api_url_remains_required(self):
         env = self.configured()
-        del env["ANDROID_KEYSTORE_BASE64"]
+        del env['API_BASE_URL']
         result, summary = plan(env)
         self.assertEqual(result, dict(deploy=True, release=False, play=False))
-        self.assertIn("ANDROID_KEYSTORE_BASE64", summary)
+        self.assertIn('API_BASE_URL', summary)
 
     def test_stale_commit_cannot_deploy_or_publish(self):
         env = self.configured()
         env["CURRENT_MAIN_SHA"] = "b" * 40
         result, _ = plan(env)
         self.assertFalse(any(result.values()))
+
+    def test_workflow_run_uses_tested_source_instead_of_default_branch_sha(self):
+        env = self.configured()
+        env['GITHUB_SHA'] = 'b' * 40
+        env['RELEASE_SOURCE_SHA'] = 'a' * 40
+        self.assertTrue(plan(env)[0]['release'])
+        env['RELEASE_SOURCE_SHA'] = 'c' * 40
+        self.assertFalse(plan(env)[0]['release'])
 
     def test_disabled_jobs_and_invalid_configuration(self):
         env = self.configured()
