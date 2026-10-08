@@ -102,25 +102,17 @@ jobs:
           arch: x86_64
           profile: pixel_5
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            set -euo pipefail
-            app='com.parcelbridge.app.direct'
-            adb install -r app/build/outputs/apk/direct/debug/app-direct-debug.apk
-            adb shell pm clear "$app"
-            adb logcat -c
-            adb shell am start -W -n "$app/com.parcelbridge.app.MainActivity"
-            sleep 8
-            if [ -z "$(adb shell pidof "$app" | tr -d '\r')" ]; then
-              adb logcat -d -v time -t 5000
-              echo '::error::ParcelBridge process died during cold launch'
-              exit 1
-            fi
-            if ! adb shell dumpsys activity activities | grep -q "$app"; then
-              adb logcat -d -v time -t 5000
-              echo '::error::ParcelBridge never reached a visible activity'
-              exit 1
-            fi
-            echo 'ParcelBridge remained running after Android 16 cold launch.'
+          # The emulator action executes script via /bin/sh and splits multiline
+          # inputs. Invoke one Bash file as a single command instead.
+          script: bash scripts/android-startup-smoke.sh
+      - name: Upload Android startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-16-startup-diagnostics
+          path: build/android-startup-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
   automation:
     needs: [api, android, android-startup-smoke]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
