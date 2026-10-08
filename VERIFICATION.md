@@ -82,3 +82,32 @@ Separate automatic Android release — 9 October 2026:
 - Fourteen Python tests and seventeen Node tests passed (31 total), including actual preflight-shell execution with mocked GitHub current-commit queries, tested/default SHA differences, stale commits, disabled release flags, missing API URL, manual/tag paths, and publication target verification. No real publishing or GitHub API mutations were performed by the tests.
 - All five workflow YAML files, 24 shell blocks and embedded Python parsed. Trigger names, exact checkout refs, duplicate-path removal and seven trusted/untrusted completion-condition cases were verified locally. Actionlint and Android builds were not rerun; a live GitHub Actions run remains pending.
 - Changes are limited to workflows, automation scripts, tests and instructions. Android and Worker source/version settings are unchanged. Upload the full corrected project on the default `main` branch and leave `AUTO_RELEASE` unset or `true` to enable the new chain.
+
+## Startup crash regression (0.2.1)
+
+- Cold launch on an actual Android 16 emulator is now a mandatory CI step. It
+  clears app data, launches the direct APK and checks that its process remains
+  alive with a visible activity after eight seconds.
+- `MainActivityStartupTest` opens the **real** activity with empty preferences,
+  malformed saved profile JSON, and verifies local crash reports are removable.
+- A failure while constructing the initial Material UI shows a minimal recovery
+  screen with **Copy crash report** and **Retry**. Background scheduling and update
+  checks no longer block opening the activity. Unexpected server responses in a
+  UI callback are recorded instead of crashing the process.
+- Crash reports are stored **only in the app's private files directory**. Users
+  explicitly copy them from the recovery screen or Settings; they are never
+  automatically uploaded. Saved account preferences and server data are not
+  deleted as part of crash recovery.
+- For a device-specific reproduction, connect a device via Android Debug Bridge:
+
+  ```sh
+  adb logcat -c
+  adb shell am force-stop com.parcelbridge.app.direct
+  adb shell am start -W -n com.parcelbridge.app.direct/com.parcelbridge.app.MainActivity
+  adb logcat -d -v time | grep -A 70 -E 'FATAL EXCEPTION|AndroidRuntime|ParcelBridge'
+  ```
+
+The actual exception from the reported screenshot was **not included** in the
+screenshot or source ZIP; share the Android **Copy crash log URL** output to
+identify any device-specific underlying cause. Do not consider the original
+crash proven resolved until tested on the affected device.

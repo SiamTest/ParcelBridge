@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.OnBackPressedCallback
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import android.content.Intent
+import android.util.Log
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
@@ -61,13 +62,36 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { navigateBack() }
         })
-        if (api.prefs.contains("user")) account = JSONObject(api.prefs.getString("user","{}")!!)
-        if (api.token.isEmpty()) auth() else home()
-        SyncJob.schedule(this)
-        Updates.check(this,api,false)
-        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),9)
+        // A corrupted or partially migrated profile must not terminate app startup.
+        account = runCatching {
+            JSONObject(api.prefs.getString("user", "{}") ?: "{}")
+        }.getOrElse { problem ->
+            Log.w("ParcelBridge", "Saved account metadata is invalid; retaining it for recovery", problem)
+            JSONObject()
+        }
+        try {
+            if (api.token.isEmpty()) auth() else home()
+        } catch (problem: Exception) {
+            CrashDiagnostics.record(this, problem)
+            showStartupRecovery(problem)
+        }
+        // These operations are optional. Neither should prevent the main screen opening.
+        runCatching { SyncJob.schedule(this) }
+            .onFailure { Log.w("ParcelBridge", "Periodic sync could not be scheduled", it) }
+        runCatching { Updates.check(this, api, false) }
+            .onFailure { Log.w("ParcelBridge", "Update check could not start", it) }
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            runCatching { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 9) }
+                .onFailure { Log.w("ParcelBridge", "Notification permission prompt unavailable", it) }
+        }
     }
-    override fun onResume() { super.onResume(); handler.postDelayed(tick,30000); Updates.resume(this) }
+    override fun onResume() {
+        super.onResume()
+        handler.removeCallbacks(tick)
+        handler.postDelayed(tick, 30000)
+        runCatching { Updates.resume(this) }
+            .onFailure { Log.w("ParcelBridge", "Update resume failed", it) }
+    }
     override fun onPause() { handler.removeCallbacks(tick); super.onPause() }
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
@@ -75,7 +99,45 @@ class MainActivity : AppCompatActivity() {
         executor.shutdownNow(); super.onDestroy()
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { super.onActivityResult(requestCode,resultCode,data); Updates.result(this,requestCode,resultCode) }
-    private fun navigateBack() { if(busy) { toast("Please wait for this request to finish"); return }; if (currentPage == "home" || currentPage == "auth") finish() else if (api.token.isEmpty()) auth() else home() }
+    private fun navigateBack() { if(busy) { toast("Please wait for this request to finish"); return }; if (currentPage == "home" || currentPage == "auth" || currentPage == "recovery") finish() else if (api.token.isEmpty()) auth() else home() }
+
+    /** Minimal platform UI if the Material interface fails during construction. */
+    private fun showStartupRecovery(problem: Exception) {
+        pageGeneration++
+        busy = false
+        currentPage = "recovery"
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val gap = dp(24)
+            setPadding(gap, gap, gap, gap)
+        }
+        layout.addView(TextView(this).apply {
+            text = "ParcelBridge couldn't open its interface"
+            textSize = 22f
+        })
+        layout.addView(TextView(this).apply {
+            text = "Your saved account and deliveries have not been erased. Copy the crash report and share it with the developer."
+            setPadding(0, dp(12), 0, dp(20))
+        })
+        layout.addView(Button(this).apply {
+            text = "Copy crash report"
+            setOnClickListener {
+                toast(if (CrashDiagnostics.copy(this@MainActivity)) "Crash report copied" else "No crash report is available")
+            }
+        })
+        layout.addView(Button(this).apply {
+            text = "Retry"
+            setOnClickListener {
+                try { if (api.token.isEmpty()) auth() else home() }
+                catch (error: Exception) {
+                    CrashDiagnostics.record(this@MainActivity, error)
+                    toast("Still unable to open: ${error.javaClass.simpleName}")
+                }
+            }
+        })
+        setContentView(layout)
+        Log.e("ParcelBridge", "Startup screen failed: ${problem.javaClass.simpleName}", problem)
+    }
     private fun dp(value: Int) = (value*resources.displayMetrics.density).toInt()
     private fun page(title: String, key: String) {
         pageGeneration++
@@ -103,8 +165,38 @@ class MainActivity : AppCompatActivity() {
         val progress=ui.progress()
         parent.addView(progress,0)
         executor.execute {
-            try { val result=work(); runOnUiThread { parent.removeView(progress); busy=false; if(!isDestroyed && pageGeneration==origin) success(result) } }
-            catch(e:Exception) { runOnUiThread { parent.removeView(progress); busy=false; if(!isDestroyed) { toast(e.message ?: "Please try again"); if(api.token.isEmpty() && account.length()>0) { account=JSONObject(); auth() } } } }
+            try {
+                val result = work()
+                runOnUiThread {
+                    parent.removeView(progress)
+                    busy = false
+                    if (!isDestroyed && pageGeneration == origin) {
+                        // API callbacks may throw on unexpected payloads. Never crash
+                        // the entire app from a background-response UI update.
+                        try { success(result) }
+                        catch (problem: Exception) {
+                            CrashDiagnostics.record(this, problem)
+                            toast("Unable to display server response. A diagnostic report was saved.")
+                        }
+                    }
+                }
+            } catch (problem: Exception) {
+                runOnUiThread {
+                    parent.removeView(progress)
+                    busy = false
+                    if (!isDestroyed && pageGeneration == origin) {
+                        toast(problem.message ?: "Please try again")
+                        if (api.token.isEmpty() && account.length() > 0) {
+                            account = JSONObject()
+                            try { auth() }
+                            catch (error: Exception) {
+                                CrashDiagnostics.record(this, error)
+                                showStartupRecovery(error)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     private fun persistAccount(user:JSONObject) { account=user; api.prefs.edit().putString("user",user.toString()).apply() }
@@ -324,6 +416,15 @@ class MainActivity : AppCompatActivity() {
     private fun settings() {
         page("Settings","settings")
         label("ParcelBridge ${BuildConfig.VERSION_NAME} · ${BuildConfig.FLAVOR}")
+        if (CrashDiagnostics.lastReport(this) != null) {
+            button("Copy last crash report") {
+                if (CrashDiagnostics.copy(this)) toast("Crash report copied")
+            }
+            button("Clear saved crash report") {
+                CrashDiagnostics.clear(this)
+                settings()
+            }
+        }
         val server=field("ParcelBridge HTTPS API address",api.base)
         button("Save server address", primary=true) { api.base=server.text.toString(); account=JSONObject(); auth() }
         val uiPreferences = getSharedPreferences("parcelbridge_ui", MODE_PRIVATE)
