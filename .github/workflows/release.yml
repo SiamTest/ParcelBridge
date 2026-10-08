@@ -199,10 +199,34 @@ jobs:
               output.write(f'enabled={str(enabled).lower()}\n')
           PY
   play:
+    # Keep the automatic Play upload self-contained, too. The separate
+    # play.yml workflow is still available for manual uploads.
     needs: release
     if: needs.release.outputs.play == 'true'
-    uses: ./.github/workflows/play.yml
-    with:
-      tag: ${{ needs.release.outputs.tag }}
-      track: ${{ vars.PLAY_TRACK || 'internal' }}
-    secrets: inherit
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: parcelbridge-play-upload
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+      - name: Download signed bundle from published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          mkdir -p release
+          gh release download "$RELEASE_TAG" --pattern parcelbridge-play.aab --pattern update.json --dir release
+      - uses: google-github-actions/auth@v3
+        id: google
+        with:
+          credentials_json: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+      - name: Create draft release in Google Play
+        env:
+          PLAY_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+          PLAY_TRACK: ${{ vars.PLAY_TRACK || 'internal' }}
+        run: python3 scripts/publish-play.py

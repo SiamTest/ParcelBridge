@@ -147,7 +147,50 @@ jobs:
           export CURRENT_MAIN_SHA
           python3 scripts/automation-plan.py
   deploy:
+    # Self-contained deployment avoids requiring another workflow to exist in
+    # the same commit; manual deployments still use deploy-api.yml.
     needs: automation
     if: needs.automation.outputs.deploy == 'true'
-    uses: ./.github/workflows/deploy-api.yml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: parcelbridge-api-deploy
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: api
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Validate API configuration
+        run: |
+          set -euo pipefail
+          for setting in TURSO_DATABASE_URL TURSO_AUTH_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN; do
+            if [ -z "${!setting}" ]; then
+              echo "::error::Missing $setting in production environment or repository secrets"
+              exit 1
+            fi
+          done
+      - name: Test and migrate API
+        run: |
+          npm ci
+          npm run check
+          npm test
+          npm audit --omit=dev --audit-level=high
+          npm run migrate
+      - name: Deploy Cloudflare Worker
+        run: |
+          node -e 'require("node:fs").writeFileSync("secrets.json", JSON.stringify({TURSO_DATABASE_URL:process.env.TURSO_DATABASE_URL,TURSO_AUTH_TOKEN:process.env.TURSO_AUTH_TOKEN}), {mode:0o600})'
+          npx wrangler deploy --secrets-file secrets.json --var "GITHUB_REPOSITORY:$GITHUB_REPOSITORY"
+      - name: Delete temporary secrets
+        if: always()
+        run: rm -f secrets.json
