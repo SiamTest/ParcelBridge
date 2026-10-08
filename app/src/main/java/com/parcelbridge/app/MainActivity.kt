@@ -1,11 +1,12 @@
 package com.parcelbridge.app
 
 import android.Manifest
-import android.app.Activity
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.OnBackPressedCallback
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
@@ -16,7 +17,6 @@ import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.view.View
-import android.view.WindowInsets
 import android.widget.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -26,9 +26,10 @@ import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.Executors
 
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
     private lateinit var api: Api
     private lateinit var content: LinearLayout
+    private lateinit var ui: ExpressiveUi
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private var account = JSONObject()
@@ -37,7 +38,6 @@ class MainActivity : Activity() {
     private var pageGeneration = 0
     private var locationListener: LocationListener? = null
     private var busy = false
-    private val teal = Color.rgb(0,127,115)
     private val tick = object : Runnable {
         override fun run() {
             if (currentPage == "order" && !busy && orderId != null && api.token.isNotEmpty()) {
@@ -57,7 +57,10 @@ class MainActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         api = Api(this)
-        if(android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
+        ui = ExpressiveUi(this)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { navigateBack() }
+        })
         if (api.prefs.contains("user")) account = JSONObject(api.prefs.getString("user","{}")!!)
         if (api.token.isEmpty()) auth() else home()
         SyncJob.schedule(this)
@@ -72,36 +75,24 @@ class MainActivity : Activity() {
         executor.shutdownNow(); super.onDestroy()
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { super.onActivityResult(requestCode,resultCode,data); Updates.result(this,requestCode,resultCode) }
-    @Deprecated("Android back navigation") override fun onBackPressed() { navigateBack() }
     private fun navigateBack() { if(busy) { toast("Please wait for this request to finish"); return }; if (currentPage == "home" || currentPage == "auth") finish() else if (api.token.isEmpty()) auth() else home() }
     private fun dp(value: Int) = (value*resources.displayMetrics.density).toInt()
     private fun page(title: String, key: String) {
         pageGeneration++
-        currentPage=key
-        val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(245,248,251)) }
-        root.setOnApplyWindowInsetsListener { view,insets ->
-            if (android.os.Build.VERSION.SDK_INT >= 30) { val b=insets.getInsets(WindowInsets.Type.systemBars()); view.setPadding(b.left,b.top,b.right,b.bottom) }
-            else @Suppress("DEPRECATION") view.setPadding(insets.systemWindowInsetLeft,insets.systemWindowInsetTop,insets.systemWindowInsetRight,insets.systemWindowInsetBottom)
-            insets
-        }
-        val header=TextView(this).apply { text="ParcelBridge · Feni\n$title"; textSize=23f; setTextColor(Color.WHITE); setBackgroundColor(teal); setPadding(dp(20),dp(18),dp(20),dp(18)) }
-        root.addView(header)
-        if (api.token.isNotEmpty()) {
-            val nav=LinearLayout(this)
-            listOf("Home" to { home() },"Orders" to { orders() },"Settings" to { settings() }).forEach { (label, action) -> nav.addView(Button(this).apply { text=label; setOnClickListener { if(!busy) action() } },LinearLayout.LayoutParams(0,dp(54),1f)) }
-            root.addView(nav)
-        }
-        content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(20),dp(12),dp(20),dp(30)) }
-        val scroll=ScrollView(this).apply { isFillViewport=true; addView(content) }
-        root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f)); setContentView(root); root.requestApplyInsets()
+        currentPage = key
+        content = ui.page(title, key, api.token.isNotEmpty(), { destination ->
+            if (busy) false else {
+                when (destination) { "orders" -> orders(); "settings" -> settings(); else -> home() }
+                true
+            }
+        }, ::navigateBack)
     }
-    private fun label(value: String, big: Boolean=false): TextView = TextView(this).apply { text=value; textSize=if(big) 21f else 16f; setTextColor(Color.rgb(22,50,79)); setPadding(0,dp(8),0,dp(8)); content.addView(this) }
-    private fun button(value: String, action: () -> Unit): Button = Button(this).apply { text=value; setTextColor(teal); minimumHeight=dp(48); setOnClickListener { if(!busy) try { action() } catch(e:Exception) { toast(e.message ?: "Check your entries") } }; content.addView(this,LinearLayout.LayoutParams(-1,-2)) }
-    private fun field(name: String, value: String="", type: Int=InputType.TYPE_CLASS_TEXT): EditText {
-        val caption=label(name)
-        return EditText(this).apply { id=View.generateViewId(); caption.labelFor=id; inputType=type; setText(value); minHeight=dp(48); content.addView(this,LinearLayout.LayoutParams(-1,-2)) }
+    private fun label(value: String, big: Boolean = false): TextView = ui.info(content, value, big)
+    private fun button(value: String, primary: Boolean = false, action: () -> Unit): Button = ui.button(content, value, primary) {
+        if (!busy) try { action() } catch (e: Exception) { toast(e.message ?: "Check your entries") }
     }
-    private fun choose(name:String, values: List<String>): Spinner { label(name); return Spinner(this).apply { adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,values); contentDescription=name; minimumHeight=dp(48); content.addView(this) } }
+    private fun field(name: String, value: String = "", type: Int = InputType.TYPE_CLASS_TEXT): EditText = ui.field(content, name, value, type)
+    private fun choose(name: String, values: List<String>): MaterialAutoCompleteTextView = ui.choice(content, name, values)
     private fun toast(message:String) { Toast.makeText(this,message,Toast.LENGTH_LONG).show() }
     private fun offlineNotice() { if(api.offline) label("Offline: showing saved information. Connect before changing a delivery.") }
     private fun <T> background(work: () -> T, success: (T) -> Unit) {
@@ -109,7 +100,7 @@ class MainActivity : Activity() {
         busy=true
         val origin=pageGeneration
         val parent=content
-        val progress=ProgressBar(this).apply { contentDescription="Working" }
+        val progress=ui.progress()
         parent.addView(progress,0)
         executor.execute {
             try { val result=work(); runOnUiThread { parent.removeView(progress); busy=false; if(!isDestroyed && pageGeneration==origin) success(result) } }
@@ -126,9 +117,9 @@ class MainActivity : Activity() {
         val email=field("Email",type=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
         val password=field("Password · at least 10 characters",type=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val role=if(register) choose("I am a",listOf("seller","rider")) else null
-        button(if(register) "Create account" else "Sign in") {
+        button(if(register) "Create account" else "Sign in", primary=true) {
             val b=json("email" to email.text.toString(),"password" to password.text.toString())
-            if(register) { b.put("name",name!!.text.toString()); b.put("phone",phone!!.text.toString()); b.put("role",role!!.selectedItem.toString()) }
+            if(register) { b.put("name",name!!.text.toString()); b.put("phone",phone!!.text.toString()); b.put("role",role!!.text.toString()) }
             background({ api.post("/v1/auth/${if(register) "register" else "login"}",b) }) { api.token=it.getString("token"); persistAccount(it.getJSONObject("user")); home() }
         }
         button(if(register) "Already registered? Sign in" else "Create a seller or rider account") { auth(!register) }
@@ -139,14 +130,14 @@ class MainActivity : Activity() {
         page("Your delivery desk","home")
         label("Hello, ${account.optString("name")}",true)
         val role=account.optString("role")
-        if(role=="seller") { button("Book a delivery") { booking() }; button("Saved pickup addresses") { addresses() }; button("Preferred riders") { riders() } }
+        if(role=="seller") { button("Book a delivery", primary=true) { booking() }; button("Saved pickup addresses") { addresses() }; button("Preferred riders") { riders() } }
         if(role=="rider") {
             label(if(account.optInt("approved")==1) "Rider account approved" else "Your account is awaiting operator approval")
-            button("Go online and find nearby jobs") { location { lat,lng -> background({ api.post("/v1/me/availability",json("online" to 1,"lat" to lat,"lng" to lng)) }) { persistAccount(account.put("online",1)); jobs() } } }
+            button("Go online and find nearby jobs", primary=true) { location { lat,lng -> background({ api.post("/v1/me/availability",json("online" to 1,"lat" to lat,"lng" to lng)) }) { persistAccount(account.put("online",1)); jobs() } } }
             button("Go offline") { background({ api.post("/v1/me/availability",json("online" to 0,"lat" to 23.0144,"lng" to 91.3966)) }) { persistAccount(account.put("online",0)); toast("You are offline") } }
             button("Nearby jobs") { jobs() }
         }
-        if(role=="admin") button("Operator tools") { admin() }
+        if(role=="admin") button("Operator tools", primary=true) { admin() }
         button("Delivery history") { orders() }; button("Help and support") { tickets() }
         background({ val me=api.obj("/v1/me",true); val s=api.obj("/v1/summary",true); me to s }) { (me,s) ->
             persistAccount(me); offlineNotice()
@@ -180,12 +171,12 @@ class MainActivity : Activity() {
         fun data(): JSONObject {
             require(schedule.text.isBlank() || schedule.text.toString().matches(Regex("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}"))) { "Use yyyy-MM-dd HH:mm for pickup time" }
             val timestamp=if(schedule.text.isBlank()) System.currentTimeMillis()/1000 else SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.US).apply { isLenient=false; timeZone=TimeZone.getTimeZone("Asia/Dhaka") }.parse(schedule.text.toString())!!.time/1000
-            return json("request_id" to requestId,"pickup_area" to pickupArea.text.toString(),"pickup_address" to pickup.text.toString(),"pickup_lat" to plat.text.toString().toDouble(),"pickup_lng" to plng.text.toString().toDouble(),"dropoff_area" to dropArea.text.toString(),"dropoff_address" to drop.text.toString(),"dropoff_lat" to dlat.text.toString().toDouble(),"dropoff_lng" to dlng.text.toString().toDouble(),"recipient_name" to name.text.toString(),"recipient_phone" to phone.text.toString(),"size" to size.selectedItem.toString(),"instructions" to instructions.text.toString(),"cod_minor" to minorAmount(cod.text.toString()),"scheduled_at" to timestamp,"preferred_rider_id" to preferred.text.toString())
+            return json("request_id" to requestId,"pickup_area" to pickupArea.text.toString(),"pickup_address" to pickup.text.toString(),"pickup_lat" to plat.text.toString().toDouble(),"pickup_lng" to plng.text.toString().toDouble(),"dropoff_area" to dropArea.text.toString(),"dropoff_address" to drop.text.toString(),"dropoff_lat" to dlat.text.toString().toDouble(),"dropoff_lng" to dlng.text.toString().toDouble(),"recipient_name" to name.text.toString(),"recipient_phone" to phone.text.toString(),"size" to size.text.toString(),"instructions" to instructions.text.toString(),"cod_minor" to minorAmount(cod.text.toString()),"scheduled_at" to timestamp,"preferred_rider_id" to preferred.text.toString())
         }
-        button("Get price and confirm booking") {
+        button("Get price and confirm booking", primary=true) {
             val b=data()
             background({ api.post("/v1/quote",b) }) { q ->
-                AlertDialog.Builder(this).setTitle("Confirm delivery")
+                ExpressiveDialogBuilder(this).setTitle("Confirm delivery")
                     .setMessage("Delivery fee: ${money(q.getLong("fee_minor"),q.getString("currency"))}\nEstimated distance: ${q.getDouble("distance_km")} km\nPickup: ${date(b.getLong("scheduled_at"))}\nProduct cash to collect: ${money(b.getLong("cod_minor"))}\n\nDelivery charges are separate from product COD. Confirm addresses and parcel details.")
                     .setNegativeButton("Edit",null).setPositiveButton("Book") { _,_ -> background({ api.post("/v1/orders",b) }) { order(it.getString("id")) } }.show()
             }
@@ -211,7 +202,7 @@ class MainActivity : Activity() {
         orderRows?.let { if(it.parent===content) content.removeView(it) }
         val container=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
         rows.objects().filter { query.isBlank() || it.toString().contains(query,true) }.forEach { o ->
-            container.addView(Button(this).apply { text="${o.getString("pickup_area")} → ${o.getString("dropoff_area")}\n${o.getString("status").replace('_',' ')} · ${money(o.getLong("fee_minor"))}"; minHeight=dp(72); setOnClickListener { if(!busy) order(o.getString("id")) } })
+            ui.button(container, "${o.getString("pickup_area")} → ${o.getString("dropoff_area")}\n${o.getString("status").replace('_',' ')} · ${money(o.getLong("fee_minor"))}") { if(!busy) order(o.getString("id")) }
         }
         orderRows=container; content.addView(container)
     }
@@ -224,7 +215,7 @@ class MainActivity : Activity() {
             rows.objects().forEach { o ->
                 label("${o.getString("pickup_area")} → ${o.getString("dropoff_area")}",true)
                 label("${o.optDouble("distance_km")} km to pickup · ${o.getString("size")} parcel\nYour pay: ${money(o.getLong("rider_pay_minor"))}\nCash responsibility: ${money(o.getLong("cod_minor"))}\nPickup: ${date(o.getLong("scheduled_at"))}")
-                button("Accept delivery") { background({ api.post("/v1/orders/${o.getString("id")}/accept") }) { order(o.getString("id")) } }
+                button("Accept delivery", primary=true) { background({ api.post("/v1/orders/${o.getString("id")}/accept") }) { order(o.getString("id")) } }
             }
         }
     }
@@ -270,32 +261,49 @@ class MainActivity : Activity() {
         }
     }
     private fun step(target:String,action:String,code:String="",note:String="",cash:Long=0) { background({ api.post("/v1/orders/$target/transition",json("action" to action,"code" to code,"note" to note,"cod_collected_minor" to cash)) }) { order(target) } }
-    private fun codeDialog(target:String,action:String,cash:Long) {
-        val form=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(20),dp(10),dp(20),dp(10)) }
-        form.addView(TextView(this).apply { text=if(action=="deliver") "Receive the parcel confirmation code. Collect ${money(cash)} for the product before completing." else "Enter the seller’s six-digit pickup code." })
-        val code=EditText(this).apply { hint="Confirmation code"; inputType=InputType.TYPE_CLASS_NUMBER; minHeight=dp(48) }; form.addView(code)
-        val cashField=EditText(this).apply { hint="Product cash actually collected in BDT"; inputType=8194; minHeight=dp(48); setText(if(cash==0L) "0" else "") }
-        if(action=="deliver") form.addView(cashField)
-        val dialog=AlertDialog.Builder(this).setTitle("Confirm ${action.replace('_',' ')}").setView(form).setNegativeButton("Cancel",null).setPositiveButton("Confirm",null).create()
-        dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { try { val received=if(action=="deliver") minorAmount(cashField.text.toString()) else 0L; if(action=="deliver") require(received==cash) { "Collect the exact expected COD amount" }; val value=code.text.toString(); require(value.matches(Regex("\\d{6}"))) { "Enter six digits" }; dialog.dismiss(); step(target,action,value,cash=received) } catch(e:Exception) { toast(e.message ?: "Check amount") } } }; dialog.show()
+    private fun codeDialog(target: String, action: String, cash: Long) {
+        val form = ui.form()
+        ui.info(form, if (action == "deliver") "Receive the parcel confirmation code. Collect ${money(cash)} for the product before completing." else "Enter the seller’s six-digit pickup code.")
+        val code = ui.field(form, "Confirmation code", "", InputType.TYPE_CLASS_NUMBER)
+        val cashField = if (action == "deliver") ui.field(form, "Product cash actually collected in BDT", if (cash == 0L) "0" else "", 8194) else null
+        val dialog = ExpressiveDialogBuilder(this).setTitle("Confirm ${action.replace('_', ' ')}")
+            .setView(ui.dialogContent(form)).setNegativeButton("Cancel", null).setPositiveButton("Confirm", null).create()
+        dialog.setOnShowListener {
+            ExpressiveMotion.dialogShown(dialog)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {
+                    val received = cashField?.let { minorAmount(it.text.toString()) } ?: 0L
+                    if (action == "deliver") require(received == cash) { "Collect the exact expected COD amount" }
+                    val value = code.text.toString()
+                    require(value.matches(Regex("""\d{6}"""))) { "Enter six digits" }
+                    dialog.dismiss(); step(target, action, value, cash = received)
+                } catch (e: Exception) { toast(e.message ?: "Check amount") }
+            }
+        }
+        dialog.show()
     }
-    private fun noteDialog(target:String,action:String) { val input=EditText(this).apply { hint="Explain the problem" }; AlertDialog.Builder(this).setTitle("Delivery problem").setView(input).setNegativeButton("Cancel",null).setPositiveButton("Submit") { _,_ -> step(target,action,note=input.text.toString()) }.show() }
+    private fun noteDialog(target: String, action: String) {
+        val form = ui.form()
+        val input = ui.field(form, "Explain the problem", "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE)
+        ExpressiveDialogBuilder(this).setTitle("Delivery problem").setView(ui.dialogContent(form))
+            .setNegativeButton("Cancel", null).setPositiveButton("Submit") { _, _ -> step(target, action, note = input.text.toString()) }.show()
+    }
     private fun chat(target:String) {
         page("Delivery chat","chat")
         background({ api.array("/v1/orders/$target/messages",true) }) { rows ->
             offlineNotice(); rows.objects().forEach { label("${if(it.getString("sender_id")==account.optString("id")) "You" else "Partner"}: ${it.getString("text")}\n${date(it.getLong("created_at"))}") }
-            val message=field("Message"); button("Send") { background({ api.post("/v1/orders/$target/messages",json("text" to message.text.toString())) }) { chat(target) } }
+            val message=field("Message"); button("Send", primary=true) { background({ api.post("/v1/orders/$target/messages",json("text" to message.text.toString())) }) { chat(target) } }
             button("Refresh messages") { chat(target) }; button("Back to delivery") { order(target) }
         }
     }
-    private fun rating(target:String) { page("Rate your delivery","rating"); val stars=choose("Stars",listOf("5","4","3","2","1")); val comment=field("Comment (optional)"); button("Save rating") { background({ api.post("/v1/orders/$target/rating",json("stars" to stars.selectedItem.toString().toInt(),"comment" to comment.text.toString())) }) { order(target) } } }
+    private fun rating(target:String) { page("Rate your delivery","rating"); val stars=choose("Stars",listOf("5","4","3","2","1")); val comment=field("Comment (optional)"); button("Save rating", primary=true) { background({ api.post("/v1/orders/$target/rating",json("stars" to stars.text.toString().toInt(),"comment" to comment.text.toString())) }) { order(target) } } }
     private fun addresses() {
         page("Saved addresses","addresses")
         background({ api.array("/v1/addresses",true) }) { rows ->
             offlineNotice(); rows.objects().forEach { a -> label("${a.getString("label")}\n${a.getString("address")}"); button("Book from ${a.getString("label")}") { booking(a) }; button("Remove ${a.getString("label")}") { background({ api.request("/v1/addresses/${a.getString("id")}","DELETE") }) { addresses() } } }
             val name=field("Area / label"); val address=field("Full address"); val lat=field("Latitude",type=8194); val lng=field("Longitude",type=8194)
             button("Use current location") { location { x,y -> lat.setText(x.toString()); lng.setText(y.toString()) } }
-            button("Save address") { val b=json("label" to name.text.toString(),"address" to address.text.toString(),"lat" to lat.text.toString().toDouble(),"lng" to lng.text.toString().toDouble()); background({ api.post("/v1/addresses",b) }) { addresses() } }
+            button("Save address", primary=true) { val b=json("label" to name.text.toString(),"address" to address.text.toString(),"lat" to lat.text.toString().toDouble(),"lng" to lng.text.toString().toDouble()); background({ api.post("/v1/addresses",b) }) { addresses() } }
         }
     }
     private fun riders() {
@@ -303,8 +311,8 @@ class MainActivity : Activity() {
         background({ api.array("/v1/riders",true) }) { rows -> offlineNotice(); rows.objects().forEach { r -> label("${r.getString("name")} · ${if(r.optInt("online")==1) "online" else "offline"}\nRating: ${r.optDouble("rating")} (${r.optInt("deliveries")} ratings)\nRider ID: ${r.getString("id")}"); button(if(r.optInt("favorite")==1) "Remove favourite" else "Add favourite") { background({ api.request("/v1/favorites/${r.getString("id")}",if(r.optInt("favorite")==1) "DELETE" else "POST",if(r.optInt("favorite")==1) null else JSONObject()) }) { riders() } }; button("Book with this rider") { booking(preferredId=r.getString("id")) } } }
     }
     private fun tickets() { page("Help and support","tickets"); button("Create support request") { newTicket() }; background({ api.array("/v1/tickets",true) }) { rows -> offlineNotice(); rows.objects().forEach { t -> label("${t.getString("subject")} · ${t.getString("status")}\n${t.getString("message")}\n${t.optString("reply")}"); if(account.optString("role")=="admin") button("Reply to ticket") { replyTicket(t.getString("id")) } } } }
-    private fun newTicket(target:String="") { page("Ask for help","newticket"); val subject=field("Subject"); val message=field("Describe the issue"); button("Send support request") { background({ api.post("/v1/tickets",json("order_id" to target,"subject" to subject.text.toString(),"message" to message.text.toString())) }) { tickets() } } }
-    private fun replyTicket(target:String) { page("Support reply","reply"); val reply=field("Reply"); val status=choose("Status",listOf("resolved","open")); button("Save reply") { background({ api.post("/v1/admin/ticket",json("ticket_id" to target,"reply" to reply.text.toString(),"status" to status.selectedItem.toString())) }) { tickets() } } }
+    private fun newTicket(target:String="") { page("Ask for help","newticket"); val subject=field("Subject"); val message=field("Describe the issue"); button("Send support request", primary=true) { background({ api.post("/v1/tickets",json("order_id" to target,"subject" to subject.text.toString(),"message" to message.text.toString())) }) { tickets() } } }
+    private fun replyTicket(target:String) { page("Support reply","reply"); val reply=field("Reply"); val status=choose("Status",listOf("resolved","open")); button("Save reply", primary=true) { background({ api.post("/v1/admin/ticket",json("ticket_id" to target,"reply" to reply.text.toString(),"status" to status.text.toString())) }) { tickets() } } }
     private fun admin() {
         page("Operator tools","admin"); button("All deliveries and COD") { orders() }; button("Support tickets") { tickets() }
         background({ api.array("/v1/admin/users") }) { rows -> rows.objects().filter { it.optString("role")!="admin" }.forEach { u ->
@@ -317,11 +325,15 @@ class MainActivity : Activity() {
         page("Settings","settings")
         label("ParcelBridge ${BuildConfig.VERSION_NAME} · ${BuildConfig.FLAVOR}")
         val server=field("ParcelBridge HTTPS API address",api.base)
-        button("Save server address") { api.base=server.text.toString(); account=JSONObject(); auth() }
+        button("Save server address", primary=true) { api.base=server.text.toString(); account=JSONObject(); auth() }
+        val uiPreferences = getSharedPreferences("parcelbridge_ui", MODE_PRIVATE)
+        ui.preference(content, "Reduce motion", uiPreferences.getBoolean("reduce_motion", false)) { checked ->
+            uiPreferences.edit().putBoolean("reduce_motion", checked).apply()
+        }
         Updates.settings(this,api,content)
         button("Check for app update") { Updates.check(this,api,true) }
         if(api.token.isNotEmpty()) {
-            val notices=CheckBox(this).apply { text="Delivery and update notifications"; isChecked=api.prefs.getBoolean("notifications",true); setOnCheckedChangeListener { _,checked -> api.prefs.edit().putBoolean("notifications",checked).apply() }; content.addView(this) }
+            ui.preference(content, "Delivery and update notifications", api.prefs.getBoolean("notifications", true)) { checked -> api.prefs.edit().putBoolean("notifications", checked).apply() }
             button("Change password") { password() }
             button("Sign out") { background({ api.post("/v1/auth/logout") }) { api.logout(); account=JSONObject(); auth() } }
             button("Clear session on this device") { api.logout(); account=JSONObject(); auth() }
@@ -350,7 +362,7 @@ class MainActivity : Activity() {
         manager.requestLocationUpdates(provider,0L,0f,listener,Looper.getMainLooper())
         handler.postDelayed({ if(locationListener===listener) { manager.removeUpdates(listener); locationListener=null; toast("Could not get a fresh location. Try outdoors or enable precise location.") } },25000)
     }
-    private fun confirm(message:String,action:()->Unit) { AlertDialog.Builder(this).setMessage(message).setNegativeButton("Cancel",null).setPositiveButton("Confirm") { _,_ -> action() }.show() }
+    private fun confirm(message:String,action:()->Unit) { ExpressiveDialogBuilder(this).setMessage(message).setNegativeButton("Cancel",null).setPositiveButton("Confirm") { _,_ -> action() }.show() }
     private fun share(text:String) { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type="text/plain"; putExtra(Intent.EXTRA_TEXT,text) },"Share")) }
     private fun open(url:String) { startActivity(Intent(if(url.startsWith("tel:")) Intent.ACTION_DIAL else Intent.ACTION_VIEW,Uri.parse(url))) }
     private fun date(seconds:Long) = SimpleDateFormat("dd MMM, HH:mm",Locale.ENGLISH).apply { timeZone=TimeZone.getTimeZone("Asia/Dhaka") }.format(java.util.Date(seconds*1000))

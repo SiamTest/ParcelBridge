@@ -1,4 +1,21 @@
-# Verification — 8 October 2026
+# Verification — Material 3 Expressive update, 8 October 2026
+
+Current Android UI revision:
+
+- Both `assembleDirectDebug` and `assemblePlayDebug` passed on JDK 17.0.20.1, Gradle 8.13, Android SDK 36 and build-tools 35.0.0. A clean build also passed after removing stale incremental dex outputs.
+- `testDirectDebugUnitTest` and `testPlayDebugUnitTest` passed: 12 tests per variant, 24 total. Each variant includes the original three formatting tests and nine UI/motion tests.
+- Robolectric 4.17 rendered real Material views using native graphics. Tested 320 dp / 200% text, 360 dp / high density, 600 dp rail navigation, 1200 dp dark mode, a 640 × 320 dp landscape window with large text, and Android API 26 compatibility. The other UI tests use API 34.
+- Checks cover wrapping action text, minimum touch height, bounded tablet content, retained dropdown API values, scrolling, keyboard insets, busy-navigation selection and the Reduce motion setting. Dialog construction and visibility also passed.
+- Spring physics settled to the final opacity, translation and scale, and press feedback preserved one normal click. Robolectric does not deliver the AndroidX Choreographer callbacks used here, so this test drives the real running springs with deterministic frame timestamps. It does not verify frame rate or vsync on a device.
+- Light/dark phone, tablet and large-text native renders were visually reviewed. Dropdown padding and the parcel decoration were refined after review.
+- `lintDirectDebug` and `lintPlayDebug` passed with zero errors. Existing platform/dependency/security guidance and style warnings remain; lint is not a full security audit.
+- Fourteen Python automation tests and seventeen Node automation tests passed, 31 total, including the new 0.2 automatic release tags. These tests use mocks; no GitHub runs or releases were deleted or published.
+- Existing workflow files are unchanged from the preceding automatic-release fix. Optional signing, API URL fallback, trusted successful-main release triggering and cleanup behavior are preserved.
+- Default local app version is now 0.2.0 / code 2. Automatic tags use `v0.2.<versionCode>` (or `-debug`) and keep the existing monotonic version-code logic. Worker source/version is unchanged.
+
+No physical phone or emulator testing, real signing, GitHub execution, deployment or Play upload was performed for this UI update. Live delivery behavior and real-device motion/rotation/keyboard behavior still need testing with your deployed API.
+
+## Earlier validation history, before this UI revision
 
 Completed locally on the source in this archive:
 

@@ -15,7 +15,7 @@ function mock(previous, latestStatus = 200, existingStatus = 404) {
 test('first automatic release has a valid clock-based version and tag', async () => {
   const result = await releaseVersion(env, mock(0), now);
   assert.ok(result.versionCode > 1001);
-  assert.equal(result.tag, `v0.1.${result.versionCode}`);
+  assert.equal(result.tag, `v0.2.${result.versionCode}`);
   assert.equal(result.prerelease, false);
 });
 test('a prior higher version cannot be downgraded after a clock change', async () => {
@@ -29,7 +29,7 @@ test('manual tag and prerelease are preserved', async () => {
 });
 test('test builds receive debug tags and never become stable releases', async () => {
   const result = await releaseVersion({ ...env, RELEASE_SIGNED: 'false' }, mock(1001), now);
-  assert.equal(result.tag, `v0.1.${result.versionCode}-debug`);
+  assert.equal(result.tag, `v0.2.${result.versionCode}-debug`);
   assert.equal(result.prerelease, true);
   const manual = await releaseVersion({ ...env, RELEASE_SIGNED: 'false', REQUESTED_TAG: 'v1.2.3' }, mock(1001), now);
   assert.equal(manual.tag, 'v1.2.3');

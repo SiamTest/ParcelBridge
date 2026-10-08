@@ -33,7 +33,7 @@ export async function releaseVersion(env, request = fetch, now = Date.now()) {
   const versionCode = Math.max(Math.floor(now / 1000) - 1704067200 + 1000000, previous + 1);
   assert.ok(Number.isSafeInteger(versionCode) && versionCode > 0 && versionCode <= 2100000000, 'Android version code exhausted');
   const signed = env.RELEASE_SIGNED !== 'false';
-  const tag = env.REQUESTED_TAG || `v0.1.${versionCode}${signed ? '' : '-debug'}`;
+  const tag = env.REQUESTED_TAG || `v0.2.${versionCode}${signed ? '' : '-debug'}`;
   assert.match(tag, /^v\d+\.\d+\.\d+(?:-[\w.-]+)?$/);
   const existing = await request(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers, signal: AbortSignal.timeout(30000) });
   assert.equal(existing.status, 404, existing.ok ? 'This release already exists; published assets are immutable' : `Cannot check release tag (${existing.status})`);

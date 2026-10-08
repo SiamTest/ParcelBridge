@@ -1,7 +1,6 @@
 package com.parcelbridge.app
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -9,7 +8,6 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.provider.Settings
-import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -32,7 +30,7 @@ object Updates {
                 activity.runOnUiThread {
                     if(activity.isDestroyed) return@runOnUiThread
                     if(manifest.getInt("versionCode")<=BuildConfig.VERSION_CODE) { if(manual) toast(activity,"You have the latest version"); return@runOnUiThread }
-                    AlertDialog.Builder(activity).setTitle("ParcelBridge update available").setMessage("Version ${manifest.getString("versionName")} is available. Download and verify it now?")
+                    ExpressiveDialogBuilder(activity).setTitle("ParcelBridge update available").setMessage("Version ${manifest.getString("versionName")} is available. Download and verify it now?")
                         .setNegativeButton("Later",null).setPositiveButton("Download") { _,_ -> download(activity,api,manifest) }.show()
                 }
             } catch(e:Exception) { if(manual) activity.runOnUiThread { toast(activity,e.message ?: "Update check failed") } }
@@ -40,8 +38,9 @@ object Updates {
         }
     }
     fun settings(activity:Activity,api:Api,content:LinearLayout) {
-        content.addView(CheckBox(activity).apply { text="Automatically download verified updates on Wi-Fi"; isChecked=api.prefs.getBoolean("auto_updates",false); setOnCheckedChangeListener { _,checked -> api.prefs.edit().putBoolean("auto_updates",checked).apply() } })
-        if(File(activity.filesDir,"updates/parcelbridge.apk").exists()) content.addView(android.widget.Button(activity).apply { text="Install downloaded update"; setOnClickListener { try { install(activity,api) } catch(e:Exception) { toast(activity,e.message ?: "Installation failed") } } })
+        val ui = ExpressiveUi(activity as androidx.appcompat.app.AppCompatActivity)
+        ui.preference(content, "Automatically download verified updates on Wi-Fi", api.prefs.getBoolean("auto_updates", false)) { checked -> api.prefs.edit().putBoolean("auto_updates", checked).apply() }
+        if(File(activity.filesDir,"updates/parcelbridge.apk").exists()) ui.button(content, "Install downloaded update") { try { install(activity,api) } catch(e:Exception) { toast(activity,e.message ?: "Installation failed") } }
     }
     fun background(context:Context,api:Api) {
         if(api.base.isEmpty() || System.currentTimeMillis()-api.prefs.getLong("update_check_at",0)<24*3600*1000L) return
@@ -60,7 +59,7 @@ object Updates {
         if(running) return
         running=true; toast(activity,"Downloading update…")
         executor.execute {
-            try { save(activity,api,manifest); activity.runOnUiThread { if(!activity.isDestroyed) AlertDialog.Builder(activity).setTitle("Update verified").setMessage("Install the new version now?").setNegativeButton("Later",null).setPositiveButton("Install") { _,_ -> try { install(activity,api) } catch(e:Exception) { toast(activity,e.message ?: "Installation failed") } }.show() } }
+            try { save(activity,api,manifest); activity.runOnUiThread { if(!activity.isDestroyed) ExpressiveDialogBuilder(activity).setTitle("Update verified").setMessage("Install the new version now?").setNegativeButton("Later",null).setPositiveButton("Install") { _,_ -> try { install(activity,api) } catch(e:Exception) { toast(activity,e.message ?: "Installation failed") } }.show() } }
             catch(e:Exception) { activity.runOnUiThread { toast(activity,e.message ?: "Update download failed") } }
             finally { running=false }
         }

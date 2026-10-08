@@ -1,7 +1,6 @@
 package com.parcelbridge.app
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -25,7 +24,7 @@ object Updates {
             } else if(manual) Toast.makeText(activity,"No Play update available for this account",Toast.LENGTH_LONG).show()
         }.addOnFailureListener { if(manual) Toast.makeText(activity,"Play updates require installation from a Play test or production track",Toast.LENGTH_LONG).show() }
     }
-    private fun complete(activity:Activity,update:AppUpdateManager) { AlertDialog.Builder(activity).setTitle("Update ready").setMessage("Restart ParcelBridge to finish installing the update?").setNegativeButton("Later",null).setPositiveButton("Restart") { _,_ -> update.completeUpdate() }.show() }
+    private fun complete(activity:Activity,update:AppUpdateManager) { ExpressiveDialogBuilder(activity).setTitle("Update ready").setMessage("Restart ParcelBridge to finish installing the update?").setNegativeButton("Later",null).setPositiveButton("Restart") { _,_ -> update.completeUpdate() }.show() }
     fun resume(activity:Activity) { manager?.appUpdateInfo?.addOnSuccessListener { if(it.installStatus()==InstallStatus.DOWNLOADED && !activity.isDestroyed) manager?.let { m -> complete(activity,m) } } }
     fun result(activity:Activity,request:Int,result:Int) { if(request==700 && result!=Activity.RESULT_OK) Toast.makeText(activity,"Update postponed. Check again in Settings.",Toast.LENGTH_LONG).show() }
     fun settings(activity:Activity,api:Api,content:LinearLayout) {}

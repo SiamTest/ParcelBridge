@@ -4,6 +4,10 @@ Android delivery app for sellers and riders in Feni, Bangladesh. Kotlin app, Clo
 
 ## Features included
 
+- Material 3 Expressive interface throughout authentication, seller/rider/operator flows and both updater variants. Consistent Inter typography, green light/dark themes, tonal actions, shaped cards, outlined inputs and rounded dialogs.
+- Physics-based page and dialog entrances, button/navigation press feedback and Material active indicators. Animations respect Android animator settings; Settings includes a persisted Reduce motion switch.
+- Adaptive bottom navigation below 600 dp and a navigation rail on larger screens. Content is centered and capped at 840 dp, with wrapping labels/actions, scrollable forms/dialogs and keyboard/system-bar/cutout insets. Decorative shapes hide on narrow screens or with enlarged text.
+
 - Seller and rider registration, email/password sign-in, encrypted device sessions, logout and password changes that revoke all sessions.
 - Operator approval of riders and account blocking.
 - Feni service-area validation, BDT quotes, package sizes, pickup scheduling up to 30 days ahead, and duplicate-booking protection.
@@ -115,7 +119,7 @@ Keep signing keys and passwords in secure storage; future direct updates must us
 
 API deployment is invoked directly as a reusable job inside **Test and build**; the optional Play draft is a reusable job inside **Android release**. Automatic Android releases use a `workflow_run` completion trigger and appear as a separate run in Actions. The pipeline does not rely on a bot-created tag triggering another workflow, and CI no longer also calls the release workflow, so each successful push has one automatic publication path. No personal access token is required. Individual workflows retain their manual triggers.
 
-Automatic Android version codes use seconds since 1 January 2024 plus 1,000,000, or the most recently published manifest's code plus one, whichever is higher. Release history is paginated; prereleases count for version numbering and unpublished drafts do not. This preserves increasing versions when different workflows run or counters reset. Automatic production tags are `v0.1.<versionCode>` and test tags are `v0.1.<versionCode>-debug`; explicit version tags keep their supplied name. Network errors or an invalid previous manifest stop publication instead of silently resetting the version.
+Automatic Android version codes use seconds since 1 January 2024 plus 1,000,000, or the most recently published manifest's code plus one, whichever is higher. Release history is paginated; prereleases count for version numbering and unpublished drafts do not. This preserves increasing versions when different workflows run or counters reset. Automatic production tags are `v0.2.<versionCode>` and test tags are `v0.2.<versionCode>-debug`; explicit version tags keep their supplied name. Network errors or an invalid previous manifest stop publication instead of silently resetting the version.
 
 Optional repository variables (blank uses the default):
 

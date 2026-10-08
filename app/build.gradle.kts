@@ -7,8 +7,8 @@ android {
         applicationId = "com.parcelbridge.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = (System.getenv("APP_VERSION_CODE") ?: "1").toInt()
-        versionName = System.getenv("APP_VERSION_NAME") ?: "0.1.0"
+        versionCode = (System.getenv("APP_VERSION_CODE") ?: "2").toInt()
+        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.0"
         val api = System.getenv("API_BASE_URL") ?: ""
         require(api.isEmpty() || (api.startsWith("https://") && !api.contains('"') && !api.contains('\\') && !api.contains('\n')))
         buildConfigField("String", "API_BASE_URL", "\"$api\"")
@@ -33,11 +33,21 @@ android {
         create("play") { dimension = "distribution" }
     }
     buildFeatures { buildConfig = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.jvmArgs("--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-opens=java.base/java.util=ALL-UNNAMED", "--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.net=ALL-UNNAMED", "--add-opens=java.base/java.security=ALL-UNNAMED", "--add-opens=java.base/java.text=ALL-UNNAMED", "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED", "--add-opens=java.desktop/java.awt.font=ALL-UNNAMED", "--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED")
+        }
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
-    "directImplementation"("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("com.google.android.material:material:1.14.0")
+    implementation("androidx.dynamicanimation:dynamicanimation:1.1.0")
     "playImplementation"("com.google.android.play:app-update:2.1.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
 }
