@@ -14,7 +14,7 @@ SCRIPT = ROOT / 'scripts/android-startup-smoke.sh'
 class AndroidEmulatorSmokeTests(unittest.TestCase):
     def test_runner_invokes_a_single_explicit_bash_command(self):
         ci = CI.read_text()
-        match = re.search(r'- name: Android 16 cold-start smoke test\n(?P<step>.*?)(?=\n      - name:|\n  automation:)', ci, flags=re.S)
+        match = re.search(r'- name: Android 16 cold-start smoke test \(Bash entrypoint v2\)\n(?P<step>.*?)(?=\n      - name:|\n  automation:)', ci, flags=re.S)
         self.assertIsNotNone(match)
         step = match.group('step')
         self.assertIn('uses: reactivecircus/android-emulator-runner@v2', step)
@@ -22,6 +22,13 @@ class AndroidEmulatorSmokeTests(unittest.TestCase):
         self.assertNotIn('script: |', step)
         self.assertNotIn('script: >', step)
         self.assertIn('name: android-16-startup-diagnostics', ci)
+
+    def test_checkout_revision_preflight_is_present(self):
+        ci = CI.read_text()
+        self.assertIn('name: Verify emulator workflow revision', ci)
+        self.assertIn('ParcelBridge workflow revision: android-16-bash-entrypoint-v2', ci)
+        self.assertIn("grep -Fqx '          script: bash scripts/android-startup-smoke.sh'", ci)
+        self.assertIn('bash -n scripts/android-startup-smoke.sh', ci)
 
     def test_script_uses_bash_safely(self):
         result = subprocess.run(['bash', '-n', str(SCRIPT)], capture_output=True, text=True)

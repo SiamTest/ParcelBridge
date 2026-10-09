@@ -1,17 +1,23 @@
-# Android 16 emulator smoke-test repair (9 October 2026)
+# Android 16 emulator workflow revision verification (9 October 2026)
 
-## Root cause
+## Why the old error repeats
 
-`reactivecircus/android-emulator-runner@v2` executes the `with.script` command through `/usr/bin/sh` on GitHub-hosted Ubuntu runners. Ubuntu's `/usr/bin/sh` is `dash`, which does not implement `set -o pipefail`. The earlier `ci.yml` supplied a multiline Bash script directly to `with.script`, so it failed with `set: Illegal option -o pipefail` before testing ParcelBridge. The emulator's `stop: Not implemented` cleanup output is a consequence of the failed test step, not evidence of an application error.
+The previous patch already changed `.github/workflows/ci.yml` to call `script: bash scripts/android-startup-smoke.sh`. The error `/usr/bin/sh -c set -euo pipefail` cannot be produced by that corrected action input. It indicates that an old workflow revision was executed, e.g. an old failed run was re-run, the patch was uploaded into a nested directory, or the `main` branch does not yet contain the updated workflow.
 
-## Change
+## New revision marker
 
-- `.github/workflows/ci.yml`: replace the multiline emulator `script: |` block with a single `script: bash scripts/android-startup-smoke.sh` command. Publish logs as a failure-only `android-16-startup-diagnostics` artifact.
-- `scripts/android-startup-smoke.sh`: preserve strict Bash mode and existing Direct APK install, data reset, cold launch, process and activity checks. On failure, save logcat and activity information before the emulator is torn down.
-- `scripts/test_android_emulator_smoke.py`: verify GitHub's `sh -c` invocation works and mocked startup success/process exit/invisible activity are handled correctly.
+The Android 16 job now includes a step called `Verify emulator workflow revision` before `reactivecircus/android-emulator-runner@v2`. It checks the exact YAML entrypoint and the script's Bash syntax and prints:
 
-## Applying
+    ParcelBridge workflow revision: android-16-bash-entrypoint-v2
 
-Extract the patch at your GitHub repository root, replacing matching files. Commit both `.github/workflows/ci.yml` **and** the new `scripts/android-startup-smoke.sh` and `scripts/test_android_emulator_smoke.py`. Then push to `main` to start a new CI run. An older failed run cannot be repaired by re-running the old commit.
+The emulator step is now named `Android 16 cold-start smoke test (Bash entrypoint v2)` so you can identify that GitHub is executing the corrected workflow. If that marker never appears, you are running an older workflow file or the updated commit was not pushed to the intended branch.
 
-This changes only CI and validation scripts. ParcelBridge remains at version `0.2.1`. Real Android 16 emulator execution still requires GitHub Actions; local tests simulate adb responses and check script syntax.
+## Apply correctly
+
+1. Extract this patch at the *repository root*, so the file is located exactly at `.github/workflows/ci.yml`, not `ParcelBridge-main/.github/workflows/ci.yml` under an already existing repository root.
+2. Confirm `.github/workflows/ci.yml` has `script: bash scripts/android-startup-smoke.sh` and `scripts/android-startup-smoke.sh` exists.
+3. Commit and push all patched files to `main`.
+4. Start a **new** workflow run for `main`, either by a new push or via Actions > Test and build > Run workflow. Do not click **Re-run jobs** on the old failed run: it uses the original commit.
+5. Check the new run's SHA and look for `Verify emulator workflow revision` and the marker before the emulator action.
+
+This is CI-only; ParcelBridge stays at version `0.2.1`. The actual Android emulator test remains unverified until GitHub Actions runs the new commit.
