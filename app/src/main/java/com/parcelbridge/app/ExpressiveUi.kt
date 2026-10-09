@@ -109,10 +109,30 @@ class ExpressiveUi(private val activity: AppCompatActivity) {
                 WindowInsetsCompat.CONSUMED
             }
             val night = activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
-            WindowCompat.getInsetsController(activity.window, layout).apply {
-                isAppearanceLightStatusBars = !night; isAppearanceLightNavigationBars = !night
+            // During Activity.onCreate, Android 16 may not have created the decor view yet.
+            // WindowCompat.getInsetsController(window, view) can therefore throw inside
+            // PhoneWindow.getInsetsController(). Defer the controller lookup until the
+            // content view is attached, then request the insets for edge-to-edge padding.
+            fun applySystemBars() {
+                ViewCompat.getWindowInsetsController(layout)?.apply {
+                    isAppearanceLightStatusBars = !night
+                    isAppearanceLightNavigationBars = !night
+                }
             }
-            root = layout; activity.setContentView(layout); ViewCompat.requestApplyInsets(layout)
+            layout.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(view: View) {
+                    applySystemBars()
+                    ViewCompat.requestApplyInsets(view)
+                }
+                override fun onViewDetachedFromWindow(view: View) = Unit
+            })
+            root = layout
+            activity.setContentView(layout)
+            // Handles hosts that attach the decor view immediately during setContentView.
+            if (ViewCompat.isAttachedToWindow(layout)) {
+                applySystemBars()
+                ViewCompat.requestApplyInsets(layout)
+            }
         }
         toolbar.navigationIcon = if (key in listOf("home", "orders", "auth")) null else activity.getDrawable(R.drawable.ic_back)?.apply { setTint(color(MaterialR.attr.colorOnSurface)) }
         toolbar.navigationContentDescription = "Back to delivery desk"

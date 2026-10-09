@@ -54,6 +54,27 @@ class MainActivityStartupTest {
         activity.finish()
     }
 
+
+    @Test @Config(sdk = [36])
+    fun android16ColdLaunchReachesWelcomeInsteadOfRecovery() {
+        freshPreferences()
+        // Robolectric creates the real MainActivity, which invokes ui.page() from
+        // onCreate before the activity has gone through its window-attach lifecycle.
+        val activity = Robolectric.buildActivity(MainActivity::class.java).create().start().resume().get()
+        assertFalse("Android 16 startup must not finish", activity.isFinishing)
+        val root = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
+        fun labels(view: android.view.View): List<String> =
+            (if (view is TextView) listOf(view.text.toString()) else emptyList()) +
+                if (view is android.view.ViewGroup)
+                    (0 until view.childCount).flatMap { labels(view.getChildAt(it)) }
+                else emptyList()
+        val content = labels(root)
+        assertTrue("Welcome screen must render, not the fallback recovery UI", content.any { it.contains("Welcome back") })
+        assertFalse("Avoid silently passing cold-start checks on the recovery screen",
+            content.any { it.contains("couldn't open its interface") })
+        activity.finish()
+    }
+
     @Test fun LocalCrashReportCanBeReadAndCleared() {
         freshPreferences()
         val context = RuntimeEnvironment.getApplication()

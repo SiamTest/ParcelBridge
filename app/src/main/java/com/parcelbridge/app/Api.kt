@@ -20,14 +20,58 @@ import javax.crypto.spec.GCMParameterSpec
 class Api(private val context: Context) {
     val prefs = context.getSharedPreferences("parcelbridge", Context.MODE_PRIVATE)
     var offline = false
-    var base: String
-        get() = prefs.getString("api", BuildConfig.API_BASE_URL)!!.trimEnd('/')
-        set(value) {
-            val uri = URI(value.trim())
-            require(uri.scheme == "https" && !uri.host.isNullOrEmpty() && uri.userInfo == null && uri.query == null && uri.fragment == null && (uri.path.isNullOrEmpty() || uri.path == "/")) { "Enter an HTTPS server address without a path" }
-            logout()
-            prefs.edit().putString("api", value.trim().trimEnd('/')).apply()
+    /** No server hostname is compiled into the APK. The host is paired at runtime. */
+    val base: String
+        get() {
+            val encrypted = prefs.getString("endpoint_secure", null)
+            if (encrypted != null) return runCatching { decrypt(encrypted) }.getOrDefault("")
+            // Previous releases saved manually entered endpoints as plain preferences.
+            // Encrypt before removing the legacy value; never clear sessions during migration.
+            val legacy = prefs.getString("api", null) ?: return ""
+            return try {
+                validateOrigin(legacy)
+                val sealed = encrypt(legacy.trim().trimEnd('/'))
+                check(prefs.edit().putString("endpoint_secure", sealed).remove("api").commit())
+                legacy.trim().trimEnd('/')
+            } catch (_: Exception) { "" }
         }
+
+    /** Pairing material is supplied separately by an administrator, never by an APK. */
+    fun pair(code: String) {
+        val text = code.trim()
+        require(text.startsWith("PB1-")) { "Enter a valid ParcelBridge pairing code" }
+        val encoded = text.removePrefix("PB1-")
+        require(encoded.length in 12..2048 && encoded.matches(Regex("[A-Za-z0-9_-]+"))) { "Invalid pairing code" }
+        val origin = try {
+            String(Base64.decode(encoded, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING), Charsets.UTF_8)
+        } catch (_: Exception) { throw IllegalArgumentException("Invalid pairing code") }
+        validateOrigin(origin)
+        val secure = encrypt(origin.trim().trimEnd('/'))
+        logout()
+        check(prefs.edit().putString("endpoint_secure", secure).remove("api").commit()) { "Could not save this device's connection" }
+    }
+
+    private fun validateOrigin(value: String) {
+        val uri = URI(value.trim())
+        require(uri.scheme == "https" && !uri.host.isNullOrEmpty() && uri.userInfo == null &&
+            uri.query == null && uri.fragment == null && uri.port == -1 &&
+            (uri.path.isNullOrEmpty() || uri.path == "/") && !value.contains('\n')) {
+            "This pairing code does not contain a valid HTTPS endpoint"
+        }
+    }
+
+    private fun encrypt(value: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        return Base64.encodeToString(cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+    }
+    private fun decrypt(encoded: String): String {
+        val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+        require(bytes.size >= 29) { "Invalid saved connection" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+        return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+    }
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         if (!store.containsAlias("parcelbridge-session")) {
@@ -60,7 +104,7 @@ class Api(private val context: Context) {
         File(context.filesDir, "responses").listFiles()?.forEach { it.delete() }
     }
     fun request(path: String, method: String = "GET", data: JSONObject? = null, cached: Boolean = false): Any {
-        check(base.isNotEmpty()) { "Configure your ParcelBridge server in Settings" }
+        check(base.isNotEmpty()) { "Pair this device in Settings before signing in" }
         val uri = URI(base)
         check(uri.scheme == "https" && uri.host != null) { "The server must use HTTPS" }
         val cacheDir = File(context.filesDir, "responses").apply { mkdirs() }

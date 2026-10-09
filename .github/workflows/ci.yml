@@ -55,8 +55,8 @@ jobs:
         with:
           gradle-version: '8.11.1'
       - run: gradle --no-daemon testDirectDebugUnitTest testPlayDebugUnitTest lintDirectDebug lintPlayDebug assembleDirectDebug assemblePlayDebug
-        env:
-          API_BASE_URL: ${{ vars.API_BASE_URL || secrets.API_BASE_URL }}
+      - name: Ensure APKs have no embedded Worker origin
+        run: python3 scripts/verify-apk-endpoints.py app/build/outputs/apk/direct/debug/app-direct-debug.apk app/build/outputs/apk/play/debug/app-play-debug.apk
       - uses: actions/upload-artifact@v4
         with:
           name: parcelbridge-debug-apks
@@ -87,8 +87,6 @@ jobs:
         with:
           gradle-version: '8.11.1'
       - run: gradle --no-daemon assembleDirectDebug
-        env:
-          API_BASE_URL: ${{ vars.API_BASE_URL || secrets.API_BASE_URL }}
       - name: Enable KVM for Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -145,7 +143,6 @@ jobs:
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          API_BASE_URL: ${{ vars.API_BASE_URL || secrets.API_BASE_URL }}
           AUTO_DEPLOY_API: ${{ vars.AUTO_DEPLOY_API }}
           AUTO_RELEASE: ${{ vars.AUTO_RELEASE }}
           AUTO_UPLOAD_PLAY: ${{ vars.AUTO_UPLOAD_PLAY }}
@@ -221,6 +218,7 @@ jobs:
         run: |
           node -e 'require("node:fs").writeFileSync("secrets.json", JSON.stringify({TURSO_DATABASE_URL:process.env.TURSO_DATABASE_URL,TURSO_AUTH_TOKEN:process.env.TURSO_AUTH_TOKEN}), {mode:0o600})'
           npx wrangler deploy --secrets-file secrets.json --var "GITHUB_REPOSITORY:$GITHUB_REPOSITORY"
+          npx wrangler deploy --config edge/wrangler.jsonc
       - name: Delete temporary secrets
         if: always()
         run: rm -f secrets.json

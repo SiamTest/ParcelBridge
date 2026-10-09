@@ -35,13 +35,12 @@ def run_step(script, directory, config):
 class ReleaseConfigurationTests(unittest.TestCase):
     def test_signing_is_optional_and_complete_config_restores_key(self):
         script = workflow_script('Validate release configuration and restore signing key')
-        config = dict(API_BASE_URL='https://example.workers.dev',
-                      KEYSTORE_BASE64=base64.b64encode(b'test signing key').decode(),
+        config = dict(KEYSTORE_BASE64=base64.b64encode(b'test signing key').decode(),
                       ANDROID_KEYSTORE_PASSWORD='private-test-password',
                       ANDROID_KEY_ALIAS='private-test-alias',
                       ANDROID_KEY_PASSWORD='private-test-key-password')
-        signing = [key for key in config if key != 'API_BASE_URL']
-        cases = [[], ['API_BASE_URL'], signing, *([key] for key in signing)]
+        signing = list(config)
+        cases = [[], signing, *([key] for key in signing)]
         for omitted in cases:
             with self.subTest(omitted=omitted), tempfile.TemporaryDirectory() as directory:
                 directory = Path(directory)
@@ -50,27 +49,21 @@ class ReleaseConfigurationTests(unittest.TestCase):
                 key = directory / 'release.jks'
                 for value in config.values():
                     self.assertNotIn(value, result.stdout + result.stderr)
-                if 'API_BASE_URL' in omitted:
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn('Missing API_BASE_URL', result.stdout)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                signed = str(not omitted).lower()
+                self.assertIn(f'signed={signed}', (directory / 'output').read_text())
+                self.assertIn(f'RELEASE_SIGNED={signed}', (directory / 'env').read_text())
+                if omitted:
                     self.assertFalse(key.exists())
+                    self.assertIn('test prerelease', (directory / 'summary').read_text())
                 else:
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    signed = str(not omitted).lower()
-                    self.assertIn(f'signed={signed}', (directory / 'output').read_text())
-                    self.assertIn(f'RELEASE_SIGNED={signed}', (directory / 'env').read_text())
-                    if omitted:
-                        self.assertFalse(key.exists())
-                        self.assertIn('test prerelease', (directory / 'summary').read_text())
-                    else:
-                        self.assertEqual(key.read_bytes(), b'test signing key')
-                        self.assertIn(f'ANDROID_KEYSTORE_PATH={key}', (directory / 'env').read_text())
+                    self.assertEqual(key.read_bytes(), b'test signing key')
+                    self.assertIn(f'ANDROID_KEYSTORE_PATH={key}', (directory / 'env').read_text())
 
     def test_configured_but_invalid_base64_still_fails(self):
         with tempfile.TemporaryDirectory() as directory:
             result = run_step(workflow_script('Validate release configuration and restore signing key'),
-                              Path(directory), dict(API_BASE_URL='https://example.workers.dev',
-                              KEYSTORE_BASE64='invalid!', ANDROID_KEYSTORE_PASSWORD='test',
+                              Path(directory), dict(KEYSTORE_BASE64='invalid!', ANDROID_KEYSTORE_PASSWORD='test',
                               ANDROID_KEY_ALIAS='test', ANDROID_KEY_PASSWORD='test'))
             self.assertNotEqual(result.returncode, 0)
 
@@ -136,14 +129,13 @@ class ReleaseConfigurationTests(unittest.TestCase):
                 self.assertIn(f'enabled={str(expected).lower()}', (directory / 'output').read_text())
 
     def test_automatic_release_uses_tested_sha_and_respects_configuration(self):
-        cases = [('workflow_run', 'a', '', 'https://example.workers.dev', True),
-                 ('workflow_run', 'b', '', 'https://example.workers.dev', False),
-                 ('workflow_run', 'a', 'false', 'https://example.workers.dev', False),
-                 ('workflow_run', 'a', '', '', False),
-                 ('workflow_dispatch', 'b', 'false', '', True),
-                 ('push', 'b', 'false', '', True)]
-        for event, current, flag, api, expected in cases:
-            with self.subTest(event=event, current=current, flag=flag, api=api), tempfile.TemporaryDirectory() as directory:
+        cases = [('workflow_run', 'a', '', True),
+                 ('workflow_run', 'b', '', False),
+                 ('workflow_run', 'a', 'false', False),
+                 ('workflow_dispatch', 'b', 'false', True),
+                 ('push', 'b', 'false', True)]
+        for event, current, flag, expected in cases:
+            with self.subTest(event=event, current=current, flag=flag), tempfile.TemporaryDirectory() as directory:
                 directory = Path(directory)
                 (directory / 'scripts').mkdir()
                 shutil.copy(ROOT / 'scripts/automation-plan.py', directory / 'scripts')
@@ -155,7 +147,7 @@ class ReleaseConfigurationTests(unittest.TestCase):
                                        RELEASE_SOURCE_SHA='a' * 40,
                                        GITHUB_REPOSITORY='SiamTest/ParcelBridge',
                                        MOCK_CURRENT_MAIN_SHA=current * 40, AUTO_RELEASE=flag,
-                                       API_BASE_URL=api, PATH=f'{directory}{os.pathsep}{os.environ["PATH"]}'))
+                                       PATH=f'{directory}{os.pathsep}{os.environ["PATH"]}'))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(f'release={str(expected).lower()}', (directory / 'output').read_text())
 

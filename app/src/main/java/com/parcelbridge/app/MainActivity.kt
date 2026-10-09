@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
             JSONObject()
         }
         try {
-            if (api.token.isEmpty()) auth() else home()
+            if (api.token.isEmpty() || api.base.isEmpty()) auth() else home()
         } catch (problem: Exception) {
             CrashDiagnostics.record(this, problem)
             showStartupRecovery(problem)
@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity() {
         executor.shutdownNow(); super.onDestroy()
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { super.onActivityResult(requestCode,resultCode,data); Updates.result(this,requestCode,resultCode) }
-    private fun navigateBack() { if(busy) { toast("Please wait for this request to finish"); return }; if (currentPage == "home" || currentPage == "auth" || currentPage == "recovery") finish() else if (api.token.isEmpty()) auth() else home() }
+    private fun navigateBack() { if(busy) { toast("Please wait for this request to finish"); return }; if (currentPage == "home" || currentPage == "auth" || currentPage == "recovery") finish() else if (api.token.isEmpty() || api.base.isEmpty()) auth() else home() }
 
     /** Minimal platform UI if the Material interface fails during construction. */
     private fun showStartupRecovery(problem: Exception) {
@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         layout.addView(Button(this).apply {
             text = "Retry"
             setOnClickListener {
-                try { if (api.token.isEmpty()) auth() else home() }
+                try { if (api.token.isEmpty() || api.base.isEmpty()) auth() else home() }
                 catch (error: Exception) {
                     CrashDiagnostics.record(this@MainActivity, error)
                     toast("Still unable to open: ${error.javaClass.simpleName}")
@@ -203,7 +203,7 @@ class MainActivity : AppCompatActivity() {
     private fun auth(register:Boolean=false) {
         page(if(register) "Create your account" else "Welcome back","auth")
         label("Deliver locally. Keep your shop moving.",true)
-        if(api.base.isEmpty()) { label("Connect this app to your ParcelBridge server first."); button("Set server address") { settings() }; return }
+        if(api.base.isEmpty()) { label("Pair this device with your ParcelBridge service first."); button("Pair device") { settings() }; return }
         val name=if(register) field("Your name") else null
         val phone=if(register) field("Bangladesh mobile number",type=InputType.TYPE_CLASS_PHONE) else null
         val email=field("Email",type=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
@@ -425,8 +425,9 @@ class MainActivity : AppCompatActivity() {
                 settings()
             }
         }
-        val server=field("ParcelBridge HTTPS API address",api.base)
-        button("Save server address", primary=true) { api.base=server.text.toString(); account=JSONObject(); auth() }
+        label(if (api.base.isEmpty()) "Device is not paired" else "Device paired · connection stored securely")
+        val pairing=field("Private pairing code", type=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        button("Pair this device", primary=true) { api.pair(pairing.text.toString()); account=JSONObject(); auth() }
         val uiPreferences = getSharedPreferences("parcelbridge_ui", MODE_PRIVATE)
         ui.preference(content, "Reduce motion", uiPreferences.getBoolean("reduce_motion", false)) { checked ->
             uiPreferences.edit().putBoolean("reduce_motion", checked).apply()

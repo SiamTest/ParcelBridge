@@ -33,7 +33,11 @@ Android delivery app for sellers and riders in Feni, Bangladesh. Kotlin app, Clo
 ```text
 Android seller / rider / operator
                |
-         HTTPS Worker API ---------------- GitHub Releases (direct APK updates)
+         Public gateway ---------------- GitHub Releases (direct APK updates)
+               |
+          Service binding
+               |
+           Private API Worker
                |
          Turso/libSQL
                |
@@ -65,11 +69,11 @@ Edit `.dev.vars` locally with your database URL and token. Do not commit it. App
 
 ```powershell
 cd R:\Codex\ParcelBridge
-$env:API_BASE_URL = 'https://parcelbridge-api.YOUR-SUBDOMAIN.workers.dev'
+# No API origin is passed to the Android build. Pair devices after install.
 .\gradlew.bat testDirectDebugUnitTest testPlayDebugUnitTest assembleDirectDebug assemblePlayDebug
 ```
 
-Open this project in Android Studio for a normal local development setup. A standard Gradle wrapper with the official distribution checksum is included. CI supplies the same pinned Gradle version through `gradle/actions/setup-gradle`. A debug build without `API_BASE_URL` opens a server-setup screen.
+Open this project in Android Studio for a normal local development setup. A standard Gradle wrapper with the official distribution checksum is included. CI supplies the same pinned Gradle version through `gradle/actions/setup-gradle`. Fresh installs show a device-pairing screen; no API origin is compiled into any build.
 
 ## Feni coverage and prices
 
@@ -93,7 +97,7 @@ The centre coordinates are based on [GeoNames](https://www.geonames.org/search.h
 
 Push this folder as the repository root. Add a GitHub environment named `production`. Protect it if you want release/deployment approval through GitHub.
 
-Set repository variable `API_BASE_URL` to the deployed HTTPS Worker URL, with no `/v1` path. The workflows also accept a secret named `API_BASE_URL`; a nonempty variable takes precedence. Production workflows can use values from the `production` environment, while debug CI uses repository values. For this installation it is `https://parcelbridge-api.koinlytest.workers.dev`. Configure these secrets at repository scope or in the `production` environment (environment values take precedence):
+The backend Worker is private (`workers_dev: false`). The public entry Worker (`api/edge/`) exposes the application and forwards requests through a Cloudflare service binding. Configure these secrets at repository scope or in the `production` environment (environment values take precedence):
 
 | Secret | Used for |
 |---|---|
@@ -107,7 +111,7 @@ Set repository variable `API_BASE_URL` to the deployed HTTPS Worker URL, with no
 | `ANDROID_KEY_PASSWORD` | Key password |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Optional Play draft upload service account |
 
-If a release reports `Missing API_BASE_URL`, open **Settings → Secrets and variables → Actions** and add `API_BASE_URL` under **Variables** (recommended) or **Secrets**, then rerun the workflow. The URL is embedded in the APK and is not confidential. Signing settings are optional. If any of the four signing secrets are missing, the workflow builds an installable debug APK and publishes it as a test prerelease. Google Play upload is skipped for test builds. All four secrets must be present to build production-signed packages; invalid supplied keys or passwords still fail the build.
+There is no API URL setting in GitHub Actions: no hostname is embedded into APKs or AABs. Signing settings remain optional. If any signing secrets are missing, the workflow publishes a test prerelease; invalid signing credentials still fail the build.
 
 Keep signing keys and passwords in secure storage; future direct updates must use the same signing key. Do not put secret values in chat, app configuration, source files, or GitHub variables.
 
@@ -134,7 +138,7 @@ Optional repository variables (blank uses the default):
 
 To clean the runs visible in Actions now, open **Actions → Clean completed Actions runs → Run workflow**, use the default branch and select **all_completed**. The currently executing cleanup stays visible until a later cleanup. No variables are required for Yutaka-style automatic cleanup. If previously set, remove obsolete `CLEANUP_SUCCESS_DAYS` and `CLEANUP_FAILURE_DAYS` variables; the new minute-based settings above are optional.
 
-Only configured automatic steps run; for example, Cloudflare deployment works before signing keys are added. After adding credentials, use **Test and build → Run workflow → main** to start checks and optional API deployment. If no Android source changed since the last published release, launch **Android release → Run workflow** manually to rebuild with new signing credentials or `API_BASE_URL` without modifying source. GitHub environment approval rules, if you configure them, still apply. Uploading this project does not enable a workflow that you previously disabled in GitHub; enable it through its Actions page.
+Only configured automatic steps run; for example, Cloudflare deployment works before signing keys are added. After adding credentials, use **Test and build → Run workflow → main** to start checks and optional API deployment. If no Android source changed since the last published release, launch **Android release → Run workflow** manually to rebuild with new signing credentials without modifying source. GitHub environment approval rules, if you configure them, still apply. Uploading this project does not enable a workflow that you previously disabled in GitHub; enable it through its Actions page.
 
 You can leave the four Android signing secrets unset to publish a test APK. Test builds use runner-generated debug keys and cannot update a production installation; a later test build may also need a reinstall. Use production signing for stable updates and Google Play.
 
@@ -186,3 +190,17 @@ This pilot does **not** include SMS/email verification or password recovery, pay
 Before a public Play launch, provide an actual operator contact, privacy policy, data-retention policy and account-deletion handling, complete Play data-safety declarations, review location disclosure and test on real devices. Backend tests do not verify live Turso/Cloudflare configuration or Google Play delivery.
 
 Platform references: [Cloudflare GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/), [Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/), [Turso TypeScript client](https://docs.turso.tech/sdk/ts/reference), [Play updates](https://developer.android.com/guide/playcore/in-app-updates/kotlin-java), and [Android installation consent](https://developer.android.com/reference/android/content/pm/PackageManager#canRequestPackageInstalls()).
+
+## Provision private connections
+
+Cloudflare deploys two Workers in order: `parcelbridge-api` is a private backend with no public `workers.dev` route; `parcelbridge-entry` is the public HTTPS gateway. The gateway is publicly discoverable through normal DNS/TLS/network inspection. A URL is **not a secret**, and these measures cannot hide all network destinations from clients. They do prevent an APK extractor from obtaining any hardcoded server origin, and prevent clients from connecting directly to the private backend.
+
+**Migration warning:** Existing apps that relied exclusively on the old embedded API origin need a pairing code after upgrading. Devices that had entered an endpoint manually migrate the existing value into Android Keystore-protected preferences. Deploy the gateway and distribute new pairing codes **before** disabling the old public backend; the new Worker deployment automatically disables the old `workers.dev` endpoint. Previously published APKs and historical Git commits may still expose the old hostname. Removing a current hardcoded value cannot remove it from those artifacts.
+
+1. Deploy the private backend and public gateway together using **Deploy Cloudflare API**.
+2. Obtain the gateway's HTTPS origin from Cloudflare (never put the private backend URL in the code).
+3. On your own machine, run `python3 scripts/make-pairing-code.py`; paste the **public gateway origin** when prompted.
+4. Send the resulting code privately to users. In **Settings → Private pairing code**, paste it and tap **Pair this device**. Pairing signs out the previous local session and clears cached responses to prevent cross-service mixing; server-side deliveries remain intact.
+5. Remove any old `API_BASE_URL` GitHub Variable/Secret; it is no longer read. Consider private deployment changes, user availability, and previously distributed APKs before retiring old endpoints.
+
+Pairing codes are **not cryptographic secrets**; they are URL-safe representations of a public address. Anyone with device/network access may identify the public gateway. Database credentials and Cloudflare API tokens stay on the server and are never put in pairing codes.

@@ -43,4 +43,11 @@ if ! adb shell dumpsys activity activities | grep -F "$app" >/dev/null; then
   exit 1
 fi
 
-echo 'ParcelBridge remained running after Android 16 cold launch.'
+# MainActivity has a recovery screen that keeps its process alive. That is not
+# a successful startup. Detect the logged exception from that fallback path.
+if adb logcat -d -v brief | grep -F 'Startup screen failed:'; then
+  echo '::error::ParcelBridge opened its recovery UI rather than the normal startup screen'
+  exit 1
+fi
+
+echo 'ParcelBridge remained running and did not enter startup recovery after Android 16 cold launch.'

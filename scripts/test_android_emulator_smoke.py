@@ -56,6 +56,7 @@ case "${1:-} ${2:-} ${3:-}" in
     exit 0 ;;
 esac
 if [[ "${1:-}" == 'logcat' && "${2:-}" == '-d' ]]; then
+    if [[ "$ADB_TEST_MODE" == 'startup_recovery' ]]; then echo 'E/ParcelBridge: Startup screen failed: NullPointerException'; fi
     echo 'mock Android stack trace'; exit 0
 fi
 exit 0
@@ -79,6 +80,13 @@ exit 0
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('remained running', result.stdout)
         self.assertFalse(has_diag)
+
+    def test_recovery_screen_is_a_failed_cold_start_even_if_process_lives(self):
+        result, has_diag, logs = self.run_mocked_smoke('startup_recovery')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('opened its recovery UI', result.stdout)
+        self.assertTrue(has_diag)
+        self.assertIn('Startup screen failed:', logs)
 
     def test_cold_start_process_exit_captures_diagnostics(self):
         result, has_diag, logs = self.run_mocked_smoke('no_process')

@@ -11,7 +11,7 @@ class AutomationPlanTests(unittest.TestCase):
             "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN",
             "ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD",
             "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON")}
-        env.update(GITHUB_SHA="a" * 40, CURRENT_MAIN_SHA="a" * 40, API_BASE_URL="https://example.workers.dev")
+        env.update(GITHUB_SHA="a" * 40, CURRENT_MAIN_SHA="a" * 40)
         return env
 
     def test_runs_all_configured_jobs_without_logging_values(self):
@@ -36,10 +36,9 @@ class AutomationPlanTests(unittest.TestCase):
 
     def test_api_url_remains_required(self):
         env = self.configured()
-        del env['API_BASE_URL']
         result, summary = plan(env)
-        self.assertEqual(result, dict(deploy=True, release=False, play=False))
-        self.assertIn('API_BASE_URL', summary)
+        self.assertEqual(result, dict(deploy=True, release=True, play=True))
+        self.assertNotIn('API_BASE_URL', summary)
 
     def test_stale_commit_cannot_deploy_or_publish(self):
         env = self.configured()
@@ -62,11 +61,7 @@ class AutomationPlanTests(unittest.TestCase):
         env["AUTO_RELEASE"] = "maybe"
         with self.assertRaisesRegex(ValueError, "true or false"):
             plan(env)
-        for url in ("http://example.com", "https://example.com/v1", "https://user:pass@example.com", "https://example.com?token=secret"):
-            env = self.configured()
-            env["API_BASE_URL"] = url
-            with self.assertRaisesRegex(ValueError, "HTTPS origin"):
-                plan(env)
+
 
 
 # New workflow-only versioning and deployment gates.
@@ -76,8 +71,7 @@ class ChangedSourcePlanTests(unittest.TestCase):
             'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN', 'TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN',
             'ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS',
             'ANDROID_KEY_PASSWORD', 'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON')}
-        env.update(GITHUB_SHA='a' * 40, CURRENT_MAIN_SHA='a' * 40,
-                   API_BASE_URL='https://example.workers.dev')
+        env.update(GITHUB_SHA='a' * 40, CURRENT_MAIN_SHA='a' * 40)
         return env
 
     def test_workflow_only_change_does_not_deploy_or_publish(self):

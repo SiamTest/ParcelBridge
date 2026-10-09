@@ -55,7 +55,6 @@ jobs:
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          API_BASE_URL: ${{ vars.API_BASE_URL || secrets.API_BASE_URL }}
           AUTO_RELEASE: ${{ vars.AUTO_RELEASE }}
           AUTO_UPLOAD_PLAY: ${{ vars.AUTO_UPLOAD_PLAY }}
           RELEASE_CONTENT_CHANGED: ${{ github.event_name == 'workflow_run' && steps.changes.outputs.app_changed || 'true' }}
@@ -83,7 +82,6 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       play: ${{ steps.play.outputs.enabled }}
     env:
-      API_BASE_URL: ${{ vars.API_BASE_URL || secrets.API_BASE_URL }}
       GH_TOKEN: ${{ github.token }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -97,10 +95,6 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$API_BASE_URL" ]; then
-            echo '::error::Missing API_BASE_URL. Add your deployed HTTPS Worker origin (without /v1) as a variable or secret at repository scope or in the production environment.'
-            exit 1
-          fi
           signed=true
           for setting in KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             if [ -z "${!setting}" ]; then
@@ -159,6 +153,13 @@ jobs:
       - name: Build test APK without release signing secrets
         if: steps.signing.outputs.signed != 'true'
         run: gradle --no-daemon testDirectDebugUnitTest lintDirectDebug assembleDirectDebug
+      - name: Reject embedded Worker hostnames in release packages
+        run: |
+          if [ "$RELEASE_SIGNED" = true ]; then
+            python3 scripts/verify-apk-endpoints.py app/build/outputs/apk/direct/release/app-direct-release.apk app/build/outputs/bundle/playRelease/app-play-release.aab
+          else
+            python3 scripts/verify-apk-endpoints.py app/build/outputs/apk/direct/debug/app-direct-debug.apk
+          fi
       - name: Prepare release assets
         run: |
           mkdir -p release

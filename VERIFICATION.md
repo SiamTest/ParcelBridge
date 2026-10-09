@@ -46,16 +46,16 @@ The supplied GitHub Actions logs confirm the API job passed. The Android job sto
 
 API URL release-configuration fix — 9 October 2026:
 
-- CI debug builds, production automation planning and signed releases now read `vars.API_BASE_URL || secrets.API_BASE_URL`; a nonempty variable wins. No hardcoded server fallback was introduced.
+- All APKs are endpoint-neutral: the host is provisioned at runtime via a pairing code, not embedded in BuildConfig or GitHub Actions. See `README.md` for migration limitations.
 - Release configuration validation runs immediately after checkout and reports all missing settings by name without exposing their values. A missing signing key is reported using its GitHub secret name, `ANDROID_KEYSTORE_BASE64`.
 - Seven Python tests and eleven Node tests passed. The new release guard test executes the actual workflow shell block with each required setting missing and with complete mock configuration, checking errors, absence of secret values in output and signing-key restoration. Play publishing tests use mocked HTTP calls.
 - All five workflow YAML files parsed and all 22 shell blocks passed `bash -n`. API URL fallback consistency and the early guard position were checked. Actionlint is unavailable in this environment and was not rerun.
-- App and API source and versions are unchanged. No Android build, live deployment, signing with real keys, GitHub release or Play upload was performed for this workflow fix. GitHub settings cannot be inspected from this archive; configure `API_BASE_URL` if it is absent from both Variables and Secrets.
+- All APKs are endpoint-neutral: the host is provisioned at runtime via a pairing code, not embedded in BuildConfig or GitHub Actions. See `README.md` for migration limitations.
 
 
 Optional Android signing — 9 October 2026:
 
-- Android signing secrets are now optional in both automation planning and manual/tagged releases. `API_BASE_URL` remains required. Complete signing configuration builds production-signed APK/AAB assets; missing or incomplete signing configuration builds an installable DirectDebug APK and skips Google Play. Invalid supplied signing material still fails instead of falling back.
+- All APKs are endpoint-neutral: the host is provisioned at runtime via a pairing code, not embedded in BuildConfig or GitHub Actions. See `README.md` for migration limitations.
 - Test builds receive automatic `-debug` tags and are always prereleases, including explicit plain version tags. They are never marked latest. The stable updater continues to use the latest non-prerelease API, and no updater signature checks were weakened. Test release notes explain that runner-generated debug keys cannot update production installations and later test builds may need a reinstall.
 - Twelve Python tests and twelve Node tests passed. Checks execute the real workflow configuration, asset-packaging and Play-gating shell blocks. Publication checks use a fake `gh` executable and dummy APK/AAB bytes; no GitHub releases or Play drafts were actually uploaded. Tests cover all missing signing fields, no signing fields, complete signing configuration, invalid Base64, required API URL, test tags, explicit tags and monotonic versions after prereleases.
 - All five YAML workflows, all 23 shell blocks and embedded Python parsed. Signed and test build conditions were checked. Actionlint and an Android SDK/Gradle build environment are unavailable in this session, so actionlint and actual APK/AAB builds were not rerun.

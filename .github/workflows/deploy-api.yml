@@ -50,6 +50,7 @@ jobs:
         run: |
           node -e 'require("node:fs").writeFileSync("secrets.json", JSON.stringify({TURSO_DATABASE_URL:process.env.TURSO_DATABASE_URL,TURSO_AUTH_TOKEN:process.env.TURSO_AUTH_TOKEN}), {mode:0o600})'
           npx wrangler deploy --secrets-file secrets.json --var "GITHUB_REPOSITORY:$GITHUB_REPOSITORY"
+          npx wrangler deploy --config edge/wrangler.jsonc
       - name: Delete temporary secrets
         if: always()
         run: rm -f secrets.json

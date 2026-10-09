@@ -7,11 +7,8 @@ android {
         applicationId = "com.parcelbridge.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = (System.getenv("APP_VERSION_CODE") ?: "3").toInt()
-        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.1"
-        val api = System.getenv("API_BASE_URL") ?: ""
-        require(api.isEmpty() || (api.startsWith("https://") && !api.contains('"') && !api.contains('\\') && !api.contains('\n')))
-        buildConfigField("String", "API_BASE_URL", "\"$api\"")
+        versionCode = (System.getenv("APP_VERSION_CODE") ?: "5").toInt()
+        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.3"
     }
     signingConfigs {
         create("release") {
