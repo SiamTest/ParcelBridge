@@ -1,6 +1,5 @@
 package com.parcelbridge.app
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
@@ -39,7 +38,6 @@ class ExpressiveUiTest {
         val configuration = android.content.res.Configuration(activity.resources.configuration).apply { this.fontScale = fontScale }
         @Suppress("DEPRECATION")
         activity.resources.updateConfiguration(configuration, activity.resources.displayMetrics)
-        activity.getSharedPreferences("parcelbridge_ui", Context.MODE_PRIVATE).edit().putBoolean("reduce_motion", true).commit()
         val ui = ExpressiveUi(activity)
         val content = ui.page("Your delivery desk", "home", true, { true }, {})
         ui.info(content, "Hello, Ayesha", true)
@@ -103,15 +101,15 @@ class ExpressiveUiTest {
     }
 
     @Test @Config(qualifiers = "w360dp-h780dp-mdpi")
-    fun busyNavigationKeepsSelectionAndReduceMotionKeepsContentVisible() {
+    fun busyNavigationKeepsSelectionAndScrollableContentVisible() {
         val activity = Robolectric.buildActivity(HostActivity::class.java).setup().get()
-        activity.getSharedPreferences("parcelbridge_ui", Context.MODE_PRIVATE).edit().putBoolean("reduce_motion", true).commit()
         val ui = ExpressiveUi(activity)
         val content = ui.page("Your delivery desk", "home", true, { false }, {})
         val nav = descendants(activity.window.decorView).filterIsInstance<BottomNavigationView>().single()
         nav.selectedItemId = 2
         assertEquals(1, nav.selectedItemId)
-        assertFalse(ExpressiveMotion.enabled(activity))
+        assertEquals(android.animation.ValueAnimator.areAnimatorsEnabled(), ExpressiveMotion.enabled())
+        // The scrolling column is never animated: no large content redraw per frame.
         assertEquals(1f, content.alpha)
         assertEquals(0f, content.translationY)
         val form = ui.form()
@@ -122,13 +120,21 @@ class ExpressiveUiTest {
         assertEquals(1f, dialog.window!!.decorView.alpha)
         dialog.dismiss()
     }
+    @Test fun legacyMotionPreferenceDoesNotControlMaterialAnimations() {
+        val activity = Robolectric.buildActivity(HostActivity::class.java).setup().get()
+        val prefs = activity.getSharedPreferences("parcelbridge_ui", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("reduce_motion", true).commit()
+        assertEquals(android.animation.ValueAnimator.areAnimatorsEnabled(), ExpressiveMotion.enabled())
+        prefs.edit().putBoolean("reduce_motion", false).commit()
+        assertEquals(android.animation.ValueAnimator.areAnimatorsEnabled(), ExpressiveMotion.enabled())
+    }
+
     @Test @Config(sdk = [26], qualifiers = "w360dp-h780dp-mdpi")
     fun minimumAndroidVersionBuildsMaterialForms() { exercise(360, name = "android-26-phone") }
 
     @Test @Config(qualifiers = "w360dp-h780dp-mdpi")
     fun springsSettleAndPressStillClicks() {
         val activity = Robolectric.buildActivity(HostActivity::class.java).setup().get()
-        activity.getSharedPreferences("parcelbridge_ui", Context.MODE_PRIVATE).edit().putBoolean("reduce_motion", false).commit()
         val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         activity.setContentView(content)
         var clicks = 0

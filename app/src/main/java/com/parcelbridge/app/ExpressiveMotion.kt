@@ -13,20 +13,17 @@ import androidx.dynamicanimation.animation.SpringForce
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 object ExpressiveMotion {
-    fun enabled(context: Context) = ValueAnimator.areAnimatorsEnabled() &&
-        !context.getSharedPreferences("parcelbridge_ui", Context.MODE_PRIVATE).getBoolean("reduce_motion", false)
+    // Follow the Android system-wide animator setting; there is no app-specific
+    // "Reduce motion" switch or preference read on every button press.
+    fun enabled() = ValueAnimator.areAnimatorsEnabled()
 
     private fun spring(view: View, property: DynamicAnimation.ViewProperty, end: Float) =
         SpringAnimation(view, property, end).apply {
             spring = SpringForce(end).setStiffness(550f).setDampingRatio(0.82f)
-            view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-                override fun onViewAttachedToWindow(v: View) {}
-                override fun onViewDetachedFromWindow(v: View) { cancel(); v.removeOnAttachStateChangeListener(this) }
-            })
         }
 
     fun enter(view: View) {
-        if (!enabled(view.context)) return
+        if (!enabled()) return
         view.translationY = 18f * view.resources.displayMetrics.density
         view.alpha = 0f
         val translation = spring(view, DynamicAnimation.TRANSLATION_Y, 0f)
@@ -34,8 +31,18 @@ object ExpressiveMotion {
             spring!!.dampingRatio = SpringForce.DAMPING_RATIO_NO_BOUNCY
             setMinValue(0f); setMaxValue(1f)
         }
+        // Spring animations only run for a compact element (e.g. the hero card),
+        // never for a tall scrolling list that could redraw hundreds of children.
+        val release = object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) = Unit
+            override fun onViewDetachedFromWindow(v: View) {
+                translation.cancel(); opacity.cancel()
+                v.removeOnAttachStateChangeListener(this)
+            }
+        }
+        view.addOnAttachStateChangeListener(release)
         view.doOnPreDraw {
-            if (enabled(view.context)) { translation.start(); opacity.start() }
+            if (enabled() && view.isAttachedToWindow) { translation.start(); opacity.start() }
             else { view.translationY = 0f; view.alpha = 1f }
         }
     }
@@ -44,10 +51,18 @@ object ExpressiveMotion {
     fun press(view: View) {
         val x = spring(view, DynamicAnimation.SCALE_X, 1f)
         val y = spring(view, DynamicAnimation.SCALE_Y, 1f)
+        // One detach listener per control (not one per spring axis).
+        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) = Unit
+            override fun onViewDetachedFromWindow(v: View) {
+                x.cancel(); y.cancel()
+                v.scaleX = 1f; v.scaleY = 1f
+            }
+        })
         view.setOnTouchListener { _, event ->
-            if (enabled(view.context)) {
+            if (enabled()) {
                 val target = if (event.actionMasked == MotionEvent.ACTION_DOWN) 0.97f else 1f
-                if (event.actionMasked in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL)) {
+                if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
                     x.animateToFinalPosition(target); y.animateToFinalPosition(target)
                 }
             } else { x.cancel(); y.cancel(); view.scaleX = 1f; view.scaleY = 1f }

@@ -7,8 +7,8 @@ android {
         applicationId = "com.parcelbridge.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = (System.getenv("APP_VERSION_CODE") ?: "5").toInt()
-        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.3"
+        versionCode = (System.getenv("APP_VERSION_CODE") ?: "6").toInt()
+        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.4"
     }
     signingConfigs {
         create("release") {

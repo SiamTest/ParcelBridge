@@ -24,6 +24,25 @@ class ToolchainWorkflowTests(unittest.TestCase):
                     self.assertIn("log-accepted-android-sdk-licenses: 'false'", inputs)
                     self.assertNotRegex(inputs, r'\bpackages:\s*[\'\"]?tools(?:\s|[\'"])')
 
+    def test_robolectric_android_16_runs_under_java_21_without_changing_bytecode_target(self):
+        # Robolectric API 36 requires a Java 21 runtime. Keep actual Android 16
+        # coverage; never work around this by downgrading the test's SDK.
+        startup = (ROOT / "app/src/test/java/com/parcelbridge/app/MainActivityStartupTest.kt").read_text()
+        self.assertIn("@Config(sdk = [36])", startup)
+        self.assertIn("android16ColdLaunchReachesWelcomeInsteadOfRecovery", startup)
+        expected_setups = {"ci.yml": 2, "release.yml": 1}
+        for name, count in expected_setups.items():
+            with self.subTest(workflow=name):
+                source = (WORKFLOWS / name).read_text()
+                self.assertEqual(source.count("actions/setup-java@v4"), count)
+                self.assertEqual(source.count("java-version: '21'"), count)
+                self.assertNotIn("java-version: '17'", source)
+        app_gradle = (ROOT / "app/build.gradle.kts").read_text()
+        self.assertIn('sourceCompatibility = JavaVersion.VERSION_17', app_gradle)
+        self.assertIn('targetCompatibility = JavaVersion.VERSION_17', app_gradle)
+        self.assertIn('kotlinOptions { jvmTarget = "17" }', app_gradle)
+        self.assertIn('testImplementation("org.robolectric:robolectric:4.17")', app_gradle)
+
     def test_npm_cache_only_enabled_when_lockfile_exists(self):
         expected_setup_steps = {'ci.yml': 2, 'release.yml': 1, 'deploy-api.yml': 1}
         for name, expected in expected_setup_steps.items():

@@ -20,11 +20,30 @@ import javax.crypto.spec.GCMParameterSpec
 class Api(private val context: Context) {
     val prefs = context.getSharedPreferences("parcelbridge", Context.MODE_PRIVATE)
     var offline = false
+    // Plaintext is kept in this Api instance's memory only, never written to disk.
+    // Android Keystore operations are expensive when repeated on the UI thread.
+    // SyncJob creates its own Api instance, so it reads current saved credentials.
+    @Volatile private var endpointInMemory: String? = null
+    @Volatile private var endpointSealInMemory: String? = null
+    @Volatile private var tokenInMemory: String? = null
+    @Volatile private var tokenSealInMemory: String? = null
+    @Volatile private var keystoreKey: SecretKey? = null
+
     /** No server hostname is compiled into the APK. The host is paired at runtime. */
     val base: String
         get() {
             val encrypted = prefs.getString("endpoint_secure", null)
-            if (encrypted != null) return runCatching { decrypt(encrypted) }.getOrDefault("")
+            // Cheap preferences lookup detects changes made by a background job
+            // or another Api instance without repeating hardware decryption.
+            if (encrypted != null) {
+                if (encrypted == endpointSealInMemory) endpointInMemory?.let { return it }
+                val value = runCatching { decrypt(encrypted) }.getOrDefault("")
+                endpointSealInMemory = encrypted
+                endpointInMemory = value
+                return value
+            }
+            endpointSealInMemory = null
+            endpointInMemory = null
             // Previous releases saved manually entered endpoints as plain preferences.
             // Encrypt before removing the legacy value; never clear sessions during migration.
             val legacy = prefs.getString("api", null) ?: return ""
@@ -32,7 +51,8 @@ class Api(private val context: Context) {
                 validateOrigin(legacy)
                 val sealed = encrypt(legacy.trim().trimEnd('/'))
                 check(prefs.edit().putString("endpoint_secure", sealed).remove("api").commit())
-                legacy.trim().trimEnd('/')
+                endpointSealInMemory = sealed
+                legacy.trim().trimEnd('/').also { endpointInMemory = it }
             } catch (_: Exception) { "" }
         }
 
@@ -49,6 +69,8 @@ class Api(private val context: Context) {
         val secure = encrypt(origin.trim().trimEnd('/'))
         logout()
         check(prefs.edit().putString("endpoint_secure", secure).remove("api").commit()) { "Could not save this device's connection" }
+        endpointSealInMemory = secure
+        endpointInMemory = origin.trim().trimEnd('/')
     }
 
     private fun validateOrigin(value: String) {
@@ -73,30 +95,58 @@ class Api(private val context: Context) {
         return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
     }
     private fun key(): SecretKey {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        if (!store.containsAlias("parcelbridge-session")) {
-            KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
-                init(KeyGenParameterSpec.Builder("parcelbridge-session", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
-            }.generateKey()
+        keystoreKey?.let { return it }
+        return synchronized(this) {
+            keystoreKey ?: run {
+                val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                val key = if (store.containsAlias("parcelbridge-session")) {
+                    store.getKey("parcelbridge-session", null) as SecretKey
+                } else {
+                    KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
+                        init(KeyGenParameterSpec.Builder("parcelbridge-session", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
+                    }.generateKey()
+                }
+                key.also { keystoreKey = it }
+            }
         }
-        return store.getKey("parcelbridge-session", null) as SecretKey
     }
     var token: String
         get() {
-            val encoded = prefs.getString("session", null) ?: return ""
+            val encoded = prefs.getString("session", null)
+            if (encoded == tokenSealInMemory) tokenInMemory?.let { return it }
+            if (encoded == null) {
+                tokenSealInMemory = null
+                tokenInMemory = ""
+                return ""
+            }
             return try {
                 val bytes = Base64.decode(encoded, Base64.NO_WRAP)
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                 cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
                 String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
-            } catch (_: Exception) { prefs.edit().remove("session").apply(); "" }
+                    .also { tokenSealInMemory = encoded; tokenInMemory = it }
+            } catch (_: Exception) {
+                prefs.edit().remove("session").apply()
+                tokenSealInMemory = null
+                tokenInMemory = ""
+                ""
+            }
         }
         set(value) {
-            if (value.isEmpty()) { prefs.edit().remove("session").apply(); return }
+            if (value.isEmpty()) {
+                prefs.edit().remove("session").apply()
+                tokenSealInMemory = null
+                tokenInMemory = ""
+                return
+            }
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key())
-            prefs.edit().putString("session", Base64.encodeToString(cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)).apply()
+            val sealed = Base64.encodeToString(cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+            prefs.edit().putString("session", sealed).apply()
+            tokenSealInMemory = sealed
+            tokenInMemory = value
         }
     fun logout() {
         token = ""
@@ -145,4 +195,5 @@ class Api(private val context: Context) {
 }
 class ApiError(message: String) : Exception(message)
 fun json(vararg values: Pair<String, Any?>): JSONObject = JSONObject().apply { values.forEach { put(it.first, it.second ?: JSONObject.NULL) } }
-fun JSONArray.objects(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
+// Stream rows rather than allocating an extra full list before rendering each screen.
+fun JSONArray.objects(): Sequence<JSONObject> = (0 until length()).asSequence().map { getJSONObject(it) }

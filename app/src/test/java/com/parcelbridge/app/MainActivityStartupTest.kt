@@ -18,8 +18,6 @@ class MainActivityStartupTest {
     private fun freshPreferences() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("parcelbridge", Context.MODE_PRIVATE).edit().clear().commit()
-        context.getSharedPreferences("parcelbridge_ui", Context.MODE_PRIVATE).edit()
-            .putBoolean("reduce_motion", true).commit()
         CrashDiagnostics.clear(context)
     }
 
@@ -38,6 +36,21 @@ class MainActivityStartupTest {
                         else emptyList()
                 labels(root).any { it.text.toString().contains("Welcome back") }
             })
+        activity.finish()
+    }
+
+    @Test fun settingsDoesNotExposeReduceMotionSwitch() {
+        freshPreferences()
+        val activity = launch()
+        val settings = MainActivity::class.java.getDeclaredMethod("settings").apply { isAccessible = true }
+        settings.invoke(activity)
+        fun labels(view: android.view.View): List<String> =
+            (if (view is TextView) listOf(view.text.toString()) else emptyList()) +
+                if (view is android.view.ViewGroup)
+                    (0 until view.childCount).flatMap { labels(view.getChildAt(it)) }
+                else emptyList()
+        assertFalse(labels(activity.findViewById(android.R.id.content))
+            .any { it.contains("Reduce motion", ignoreCase = true) })
         activity.finish()
     }
 

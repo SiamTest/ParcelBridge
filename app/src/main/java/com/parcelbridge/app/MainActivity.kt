@@ -39,6 +39,12 @@ class MainActivity : AppCompatActivity() {
     private var pageGeneration = 0
     private var locationListener: LocationListener? = null
     private var busy = false
+    // UI-thread formatter reused when rendering event/chat histories.
+    private val localDateFormat by lazy {
+        SimpleDateFormat("dd MMM, HH:mm", Locale.ENGLISH).apply {
+            timeZone = TimeZone.getTimeZone("Asia/Dhaka")
+        }
+    }
     private val tick = object : Runnable {
         override fun run() {
             if (currentPage == "order" && !busy && orderId != null && api.token.isNotEmpty()) {
@@ -428,10 +434,6 @@ class MainActivity : AppCompatActivity() {
         label(if (api.base.isEmpty()) "Device is not paired" else "Device paired · connection stored securely")
         val pairing=field("Private pairing code", type=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         button("Pair this device", primary=true) { api.pair(pairing.text.toString()); account=JSONObject(); auth() }
-        val uiPreferences = getSharedPreferences("parcelbridge_ui", MODE_PRIVATE)
-        ui.preference(content, "Reduce motion", uiPreferences.getBoolean("reduce_motion", false)) { checked ->
-            uiPreferences.edit().putBoolean("reduce_motion", checked).apply()
-        }
         Updates.settings(this,api,content)
         button("Check for app update") { Updates.check(this,api,true) }
         if(api.token.isNotEmpty()) {
@@ -467,5 +469,5 @@ class MainActivity : AppCompatActivity() {
     private fun confirm(message:String,action:()->Unit) { ExpressiveDialogBuilder(this).setMessage(message).setNegativeButton("Cancel",null).setPositiveButton("Confirm") { _,_ -> action() }.show() }
     private fun share(text:String) { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type="text/plain"; putExtra(Intent.EXTRA_TEXT,text) },"Share")) }
     private fun open(url:String) { startActivity(Intent(if(url.startsWith("tel:")) Intent.ACTION_DIAL else Intent.ACTION_VIEW,Uri.parse(url))) }
-    private fun date(seconds:Long) = SimpleDateFormat("dd MMM, HH:mm",Locale.ENGLISH).apply { timeZone=TimeZone.getTimeZone("Asia/Dhaka") }.format(java.util.Date(seconds*1000))
+    private fun date(seconds:Long) = localDateFormat.format(java.util.Date(seconds * 1000))
 }

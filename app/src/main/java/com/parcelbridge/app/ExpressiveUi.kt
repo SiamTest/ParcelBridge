@@ -43,7 +43,12 @@ class ExpressiveUi(private val activity: AppCompatActivity) {
     private var updatingSelection = false
     private val wide get() = activity.resources.configuration.screenWidthDp >= 600
     private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
-    private fun color(attr: Int) = MaterialColors.getColor(activity, attr, Color.BLACK)
+    // Theme colors stay constant for the lifetime of this Activity; avoid resolving
+    // styled attributes for each row, card, and button in large result lists.
+    private val colorCache = HashMap<Int, Int>(12)
+    private fun color(attr: Int) = colorCache.getOrPut(attr) {
+        MaterialColors.getColor(activity, attr, Color.BLACK)
+    }
     private fun margins() = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }
     private fun text(value: String, appearance: Int = R.style.TypeBody) = MaterialTextView(activity).apply {
         setTextAppearance(appearance); text = value; setTextColor(color(MaterialR.attr.colorOnSurface))
@@ -104,8 +109,17 @@ class ExpressiveUi(private val activity: AppCompatActivity) {
             ViewCompat.setOnApplyWindowInsetsListener(layout) { view, insets ->
                 val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
                 val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
-                view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
-                if (!wide) navigation?.visibility = if (insets.isVisible(WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE
+                val bottom = maxOf(bars.bottom, keyboard.bottom)
+                // Insets may be dispatched many times during IME animation.
+                // Request a new layout only if the actual padding changed.
+                if (view.paddingLeft != bars.left || view.paddingTop != bars.top ||
+                    view.paddingRight != bars.right || view.paddingBottom != bottom) {
+                    view.setPadding(bars.left, bars.top, bars.right, bottom)
+                }
+                if (!wide) navigation?.let { nav ->
+                    val visibility = if (insets.isVisible(WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE
+                    if (nav.visibility != visibility) nav.visibility = visibility
+                }
                 WindowInsetsCompat.CONSUMED
             }
             val night = activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -146,12 +160,13 @@ class ExpressiveUi(private val activity: AppCompatActivity) {
             addView(column, FrameLayout.LayoutParams(-1, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         }
         scroll.removeAllViews(); scroll.addView(frame, FrameLayout.LayoutParams(-1, -2)); scroll.scrollTo(0, 0)
-        hero(column, title)
-        ExpressiveMotion.enter(column)
+        // Animate only the small hero; animating the entire scrolling form makes
+        // each animation frame redraw every row on lower-end devices.
+        ExpressiveMotion.enter(hero(column, title))
         return column
     }
 
-    private fun hero(parent: LinearLayout, title: String) {
+    private fun hero(parent: LinearLayout, title: String): MaterialCardView {
         val card = MaterialCardView(activity).apply {
             setCardBackgroundColor(color(MaterialR.attr.colorPrimaryContainer)); strokeWidth = 0
             shapeAppearanceModel = ShapeAppearanceModel.builder().setAllCornerSizes(dp(32).toFloat())
@@ -168,6 +183,7 @@ class ExpressiveUi(private val activity: AppCompatActivity) {
             }, LinearLayout.LayoutParams(dp(64), dp(64)).apply { marginStart = dp(16) })
         }
         card.addView(body); parent.addView(card, margins())
+        return card
     }
 
     fun info(parent: LinearLayout, value: String, prominent: Boolean = false): TextView {

@@ -115,7 +115,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       # The checked-out source may not contain api/package-lock.json on every ref.
       # Missing cache metadata must not break the Node toolchain setup.
       - name: Detect API lockfile for optional npm caching

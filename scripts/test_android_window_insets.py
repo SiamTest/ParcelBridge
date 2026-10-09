@@ -1,5 +1,6 @@
 """Guard against the Android 16 decor-view initialization crash."""
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,8 +30,12 @@ class WindowInsetsStartupContract(unittest.TestCase):
 
     def test_app_code_change_increments_default_version(self):
         source = GRADLE.read_text()
-        self.assertIn('?: "0.2.3"', source)
-        self.assertIn('?: "5"', source)
+        name = re.search(r'versionName\s*=\s*System.getenv\("APP_VERSION_NAME"\)\s*\?:\s*"([0-9.]+)"', source)
+        code = re.search(r'versionCode\s*=\s*\(System.getenv\("APP_VERSION_CODE"\)\s*\?:\s*"(\d+)"\)', source)
+        self.assertIsNotNone(name)
+        self.assertIsNotNone(code)
+        self.assertGreaterEqual(tuple(map(int, name.group(1).split('.'))), (0, 2, 4))
+        self.assertGreaterEqual(int(code.group(1)), 6)
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ Android delivery app for sellers and riders in Feni, Bangladesh. Kotlin app, Clo
 ## Features included
 
 - Material 3 Expressive interface throughout authentication, seller/rider/operator flows and both updater variants. Consistent Inter typography, green light/dark themes, tonal actions, shaped cards, outlined inputs and rounded dialogs.
-- Physics-based page and dialog entrances, button/navigation press feedback and Material active indicators. Animations respect Android animator settings; Settings includes a persisted Reduce motion switch.
+- Physics-based page and dialog entrances, button/navigation press feedback and Material active indicators. Animations follow Android’s system animator settings, with no extra in-app motion toggle.
 - Adaptive bottom navigation below 600 dp and a navigation rail on larger screens. Content is centered and capped at 840 dp, with wrapping labels/actions, scrollable forms/dialogs and keyboard/system-bar/cutout insets. Decorative shapes hide on narrow screens or with enlarged text.
 
 - Seller and rider registration, email/password sign-in, encrypted device sessions, logout and password changes that revoke all sessions.
@@ -53,7 +53,7 @@ Database credentials are only in Workers and GitHub environment secrets. The And
 
 ## Run and configure
 
-Use JDK 17, Gradle 8.11.1, Android SDK 36, Node 22 or newer, and a Turso **libSQL** database. This project uses the supported `@libsql/client` HTTP client, not the newer Turso-engine-only SDK. The app targets API 36 for current [Google Play submissions](https://support.google.com/googleplay/android-developer/answer/11926878).
+Use JDK 21 to run Android 16 (API 36) Robolectric tests, Gradle 8.11.1, Android SDK 36, Node 22 or newer, and a Turso **libSQL** database. This project uses the supported `@libsql/client` HTTP client, not the newer Turso-engine-only SDK. The app targets API 36 for current [Google Play submissions](https://support.google.com/googleplay/android-developer/answer/11926878).
 
 ```powershell
 cd R:\Codex\ParcelBridge\api

@@ -26,3 +26,11 @@ No app, Cloudflare Worker, Gradle, manifest, or version files were changed. Work
 - Push to `main`. Verify the new **Test and build** and **Android release** runs; the old failed runs cannot be repaired in place.
 
 Local syntax and contract tests are not the same as executing GitHub Actions on a hosted runner.
+
+## Android 16 Robolectric JVM compatibility (9 October 2026)
+
+Robolectric 4.17 supports SDK 36, but SDK 36 tests require **JDK 21**.
+`MainActivityStartupTest.android16ColdLaunchReachesWelcomeInsteadOfRecovery` previously failed during test-class initialization with `UnsupportedOperationException` from `DefaultSdkProvider` while CI used JDK 17.
+The Android build, Android 16 emulator, and release workflows now select Temurin 21. Kotlin and Java compilation still target Java 17 bytecode in `app/build.gradle.kts`; application version remains 0.2.4 because these changes only update workflows, tests and documentation.
+The API 36 Robolectric test remains enabled; the real Android 16 emulator smoke test remains a separate release gate.
+Source: https://robolectric.org/compatibility_table/
